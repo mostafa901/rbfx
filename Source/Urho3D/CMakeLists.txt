@@ -146,6 +146,7 @@ endif ()
 set (THIRD_PARTY_DEPENDENCIES
     FreeType
     LZ4
+    Cereal
     PugiXml
     rapidjson
     SDL
