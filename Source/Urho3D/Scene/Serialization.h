@@ -51,7 +51,7 @@ namespace cereal
     inline void prologue(Format##InputArchive& ar, Type const&) { }  \
     inline void epilogue(Format##InputArchive& ar, Type const&) { }  \
 
-
+/*
 // Allow constructing subclasses of Object. They need Context* passed to the constructor.
 template <> struct LoadAndConstruct<Urho3D::Object>
 {
@@ -63,7 +63,7 @@ template <> struct LoadAndConstruct<Urho3D::Object>
         construct(cereal::get_user_data<Urho3D::Context*>(ar));
     }
 };
-
+*/
 // Serialize Variant
 template <class Archive> inline
 void CEREAL_SAVE_FUNCTION_NAME(Archive& ar, const Urho3D::Variant& variant)
@@ -346,116 +346,86 @@ URHO3D_SERIALIZE_PLAIN(XML, Urho3D::Vector2);
 
 
 
-//// Shared pointers
-//
-////! Saving Urho3D::SharedPtr for non polymorphic types
-//template <class Archive, class T> inline
-//typename std::enable_if<!std::is_polymorphic<T>::value, void>::type
-//CEREAL_SAVE_FUNCTION_NAME( Archive & ar, Urho3D::SharedPtr<T> const & ptr )
-//{
-//    ar( CEREAL_NVP_("ptr_wrapper", memory_detail::make_ptr_wrapper( ptr )) );
-//}
-//
-////! Loading Urho3D::SharedPtr, case when no user load and construct for non polymorphic types
-//template <class Archive, class T> inline
-//typename std::enable_if<!std::is_polymorphic<T>::value, void>::type
-//CEREAL_LOAD_FUNCTION_NAME( Archive & ar, Urho3D::SharedPtr<T> & ptr )
-//{
-//    ar( CEREAL_NVP_("ptr_wrapper", memory_detail::make_ptr_wrapper( ptr )) );
-//}
-//
-////! Saving Urho3D::WeakPtr for non polymorphic types
-//template <class Archive, class T> inline
-//typename std::enable_if<!std::is_polymorphic<T>::value, void>::type
-//CEREAL_SAVE_FUNCTION_NAME( Archive & ar, Urho3D::WeakPtr<T> const & ptr )
-//{
-//    auto const sptr = ptr.lock();
-//    ar( CEREAL_NVP_("ptr_wrapper", memory_detail::make_ptr_wrapper( sptr )) );
-//}
-//
-////! Loading Urho3D::WeakPtr for non polymorphic types
-//template <class Archive, class T> inline
-//typename std::enable_if<!std::is_polymorphic<T>::value, void>::type
-//CEREAL_LOAD_FUNCTION_NAME( Archive & ar, Urho3D::WeakPtr<T> & ptr )
-//{
-//    Urho3D::SharedPtr<T> sptr;
-//    ar( CEREAL_NVP_("ptr_wrapper", memory_detail::make_ptr_wrapper( sptr )) );
-//    ptr = sptr;
-//}
-//
-//
-////! Saving Urho3D::SharedPtr (wrapper implementation)
-///*! @internal */
-//template <class Archive, class T> inline
-//void CEREAL_SAVE_FUNCTION_NAME( Archive & ar, memory_detail::PtrWrapper<Urho3D::SharedPtr<T> const &> const & wrapper )
-//{
-//    auto & ptr = wrapper.ptr;
-//
-//    uint32_t id = ar.registerSharedPointer( ptr.get() );
-//    ar( CEREAL_NVP_("id", id) );
-//
-//    if( id & detail::msb_32bit )
-//    {
-//        ar( CEREAL_NVP_("data", *ptr) );
-//    }
-//}
-//
-////! Loading Urho3D::SharedPtr, case when user load and construct (wrapper implementation)
-///*! @internal */
-//template <class Archive, class T> inline
-//typename std::enable_if<traits::has_load_and_construct<T, Archive>::value, void>::type
-//CEREAL_LOAD_FUNCTION_NAME( Archive & ar, memory_detail::PtrWrapper<Urho3D::SharedPtr<T> &> & wrapper )
-//{
-//    auto & ptr = wrapper.ptr;
-//
-//    uint32_t id;
-//
-//    ar( CEREAL_NVP_("id", id) );
-//
-//    if( id & detail::msb_32bit )
-//    {
-//        // Storage type for the pointer - since we can't default construct this type,
-//        // we'll allocate it using std::aligned_storage and use a custom deleter
-//        using ST = typename std::aligned_storage<sizeof(T), CEREAL_ALIGNOF(T)>::type;
-//
-//
-//        Urho3D::Context* context = cereal::get_user_data<Urho3D::Context*>(ar);
-//        context->GetObjectFactories()
-//
-//        // Valid flag - set to true once construction finishes
-//        //  This prevents us from calling the destructor on
-//        //  uninitialized data.
-//        auto valid = std::make_shared<bool>( false );
-//
-//        // Allocate our storage, which we will treat as
-//        //  uninitialized until initialized with placement new
-//        ptr.reset( reinterpret_cast<T *>( new ST() ),
-//            [=]( T * t )
-//            {
-//                if( *valid )
-//                    t->~T();
-//
-//                delete reinterpret_cast<ST *>( t );
-//            } );
-//
-//        // Register the pointer
-//        ar.registerSharedPointer( id, ptr );
-//
-//        // Perform the actual loading and allocation
-//        memory_detail::loadAndConstructSharedPtr( ar, ptr.get(), typename ::cereal::traits::has_shared_from_this<T>::type() );
-//
-//        // Mark pointer as valid (initialized)
-//        *valid = true;
-//    }
-//    else
-//        ptr = std::static_pointer_cast<T>(ar.getSharedPointer(id));
-//}
-//
+// Shared pointers
+
+//! Saving Urho3D::SharedPtr for non polymorphic types
+template<class Archive, class T>
+//inline typename std::enable_if<!std::is_polymorphic<T>::value, void>::type
+void CEREAL_SAVE_FUNCTION_NAME(Archive& ar, Urho3D::SharedPtr<T> const& ptr)
+{
+    ar(CEREAL_NVP_("ptr_wrapper", memory_detail::make_ptr_wrapper(ptr)));
+}
+
+//! Loading Urho3D::SharedPtr, case when no user load and construct for non polymorphic types
+template<class Archive, class T>
+//inline typename std::enable_if<!std::is_polymorphic<T>::value, void>::type
+void CEREAL_LOAD_FUNCTION_NAME(Archive& ar, Urho3D::SharedPtr<T>& ptr)
+{
+    ar(CEREAL_NVP_("ptr_wrapper", memory_detail::make_ptr_wrapper(ptr)));
+}
+
+//! Saving Urho3D::WeakPtr for non polymorphic types
+template<class Archive, class T>
+//inline typename std::enable_if<!std::is_polymorphic<T>::value, void>::type
+void CEREAL_SAVE_FUNCTION_NAME(Archive& ar, Urho3D::WeakPtr<T> const& ptr)
+{
+    auto const sptr = ptr.lock();
+    ar(CEREAL_NVP_("ptr_wrapper", memory_detail::make_ptr_wrapper(sptr)));
+}
+
+//! Loading Urho3D::WeakPtr for non polymorphic types
+template<class Archive, class T>
+//inline typename std::enable_if<!std::is_polymorphic<T>::value, void>::type
+void CEREAL_LOAD_FUNCTION_NAME(Archive& ar, Urho3D::WeakPtr<T>& ptr)
+{
+    Urho3D::SharedPtr<T> sptr;
+    ar(CEREAL_NVP_("ptr_wrapper", memory_detail::make_ptr_wrapper(sptr)));
+    ptr = sptr;
+}
 
 
+//! Saving Urho3D::SharedPtr (wrapper implementation)
+/*! @internal */
+template<class Archive, class T>
+inline void CEREAL_SAVE_FUNCTION_NAME(Archive& ar, memory_detail::PtrWrapper<Urho3D::SharedPtr<T> const&> const& wrapper)
+{
+    auto& ptr = wrapper.ptr;
 
+    uint32_t id = ar.registerSharedPointer(ptr);
+    ar(CEREAL_NVP_("id", id));
 
+    if (id & detail::msb_32bit)
+    {
+        ar(CEREAL_NVP_("data", *ptr));
+    }
+}
 
+//! Loading Urho3D::SharedPtr, case when user load and construct (wrapper implementation)
+/*! @internal */
+template<class Archive, class T>
+inline void CEREAL_LOAD_FUNCTION_NAME(Archive& ar, memory_detail::PtrWrapper<Urho3D::SharedPtr<T>&>& wrapper)
+{
+    auto& ptr = wrapper.ptr;
+
+    uint32_t id{};
+    ar(CEREAL_NVP_("id", id));
+
+    if (id & detail::msb_32bit)
+    {
+        Urho3D::Context* context = cereal::get_user_data<Urho3D::Context*>(ar);
+        ptr = context->CreateObject<T>();
+
+        // Register the pointer
+        ar.registerSharedPointer(id, ptr);
+
+        memory_detail::LoadAndConstructLoadWrapper<Archive, T> loadWrapper(ptr);
+        ar(CEREAL_NVP_("data", loadWrapper));
+    }
+    else
+    {
+        ptr = reinterpret_cast<T*>(ar.getSharedPointer(id));
+    }
+}
 
 
 }

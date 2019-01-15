@@ -675,9 +675,9 @@ namespace cereal
           @param id The unique id that was serialized for the pointer
           @return A shared pointer to the data
           @throw Exception if the id does not exist */
-      inline std::shared_ptr<void> getSharedPointer(std::uint32_t const id)
+      inline void* getSharedPointer(std::uint32_t const id)
       {
-        if(id == 0) return std::shared_ptr<void>(nullptr);
+        if(id == 0) return nullptr;
 
         auto iter = itsSharedPointerMap.find( id );
         if(iter == itsSharedPointerMap.end())
@@ -692,7 +692,7 @@ namespace cereal
 
           @param id The unique identifier for the shared pointer
           @param ptr The actual shared pointer */
-      inline void registerSharedPointer(std::uint32_t const id, std::shared_ptr<void> ptr)
+      inline void registerSharedPointer(std::uint32_t const id, void* ptr)  // Urho3D: Support arbitrary shared pointers
       {
         std::uint32_t const stripped_id = id & ~detail::msb_32bit;
         itsSharedPointerMap[stripped_id] = ptr;
@@ -976,7 +976,7 @@ namespace cereal
       std::unordered_set<traits::detail::base_class_id, traits::detail::base_class_id_hash> itsBaseClassSet;
 
       //! Maps from pointer ids to metadata
-      std::unordered_map<std::uint32_t, std::shared_ptr<void>> itsSharedPointerMap;
+      std::unordered_map<std::uint32_t, void*> itsSharedPointerMap;
 
       //! Maps from name ids to names
       std::unordered_map<std::uint32_t, std::string> itsPolymorphicTypeMap;
