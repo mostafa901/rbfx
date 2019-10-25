@@ -109,6 +109,8 @@ struct URHO3D_API SourceBatch
     void* instancingData_{};
     /// %Geometry type.
     GeometryType geometryType_{GEOM_STATIC};
+    Vector4* lightmapTilingOffset_{};
+    unsigned lightmapTextureID_{};
 
     /// Equality comparison operator.
     bool operator==(const SourceBatch& other) const

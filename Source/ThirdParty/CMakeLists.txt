@@ -47,21 +47,25 @@ if (NOT MINI_URHO)
     if (URHO3D_GLOW)
         add_subdirectory(thekla)
         if (NOT URHO3D_MERGE_STATIC_LIBS)
-            install(TARGETS nvmesh nvcore nvmath nvimage posh EXPORT Urho3D ARCHIVE DESTINATION ${DEST_ARCHIVE_DIR})
+            install(TARGETS nvmesh nvcore nvmath nvimage posh libthekla_atlas EXPORT Urho3D ARCHIVE DESTINATION ${DEST_ARCHIVE_DIR})
         endif ()
+
+        #TODO: Embree 2
+        set (BUILD_TESTING OFF CACHE BOOL "")
 
         set (EMBREE_ISPC_SUPPORT OFF CACHE BOOL "")
         set (EMBREE_TUTORIALS OFF CACHE BOOL "")
-        set (EMBREE_STATIC_LIB OFF CACHE BOOL "")
+        set (EMBREE_STATIC_LIB ON CACHE BOOL "")
         set (EMBREE_TASKING_SYSTEM "INTERNAL" CACHE STRING "")
-        add_definitions(-DEMBREE_STATIC_LIB)
+        set (EMBREE_STATIC_RUNTIME ${URHO3D_STATIC_RUNTIME} CACHE BOOL "")
         # TODO: Try to remove CMAKE_INCLUDE_CURRENT_DIR at all
         set (CMAKE_INCLUDE_CURRENT_DIR OFF)
         add_subdirectory(embree)
         set (CMAKE_INCLUDE_CURRENT_DIR ON)
 
         if (NOT URHO3D_MERGE_STATIC_LIBS)
-            install(TARGETS embree tasking EXPORT Urho3D ARCHIVE DESTINATION ${DEST_ARCHIVE_DIR})
+            #install(TARGETS embree tasking EXPORT Urho3D ARCHIVE DESTINATION ${DEST_ARCHIVE_DIR})
+            install(TARGETS embree embree_sse42 embree_avx embree_avx2 sys simd lexers tasking EXPORT Urho3D ARCHIVE DESTINATION ${DEST_ARCHIVE_DIR})
         endif ()
     endif ()
 

@@ -22,6 +22,8 @@
 
 #include <Urho3D/Core/CoreEvents.h>
 #include <Urho3D/Engine/Engine.h>
+#include <Urho3D/Glow/GlowComponent.h>
+#include <Urho3D/Glow/Atlas/MeshLightmapUVGen.h>
 #include <Urho3D/Graphics/Camera.h>
 #include <Urho3D/Graphics/Graphics.h>
 #include <Urho3D/Graphics/Material.h>
@@ -29,6 +31,7 @@
 #include <Urho3D/Graphics/Octree.h>
 #include <Urho3D/Graphics/Renderer.h>
 #include <Urho3D/Graphics/StaticModel.h>
+#include <Urho3D/Graphics/Zone.h>
 #include <Urho3D/Input/Input.h>
 #include <Urho3D/Resource/ResourceCache.h>
 #include <Urho3D/Scene/Scene.h>
@@ -50,6 +53,7 @@ void StaticScene::Start()
 {
     // Execute base class startup
     Sample::Start();
+    GlowComponent::RegisterObject(context_);
 
     // Create the scene content
     CreateScene();
@@ -69,9 +73,40 @@ void StaticScene::Start()
 
 void StaticScene::CreateScene()
 {
+    auto* renderer = GetSubsystem<Renderer>();
+    renderer->SetDynamicInstancing(false);
+
     auto* cache = GetSubsystem<ResourceCache>();
 
     scene_ = new Scene(context_);
+
+    // Generate lightmap UV
+    auto generateLightmapUV = [](Model* model)
+    {
+        MeshLightmapUVGen::Settings uvsettings;
+        MeshLightmapUVGen uvgen(model->GetContext(), model, uvsettings);
+
+        if (!uvgen.Generate())
+        {
+            assert(0);
+            return false;
+        }
+
+        return true;
+    };
+
+    auto planeModel = cache->GetResource<Model>("Models/Plane.mdl");
+    auto mushroomModel = cache->GetResource<Model>("Models/Mushroom.mdl"); //Mushroom
+    planeModel->SetNumGeometryLodLevels(0, 1);
+    mushroomModel->SetNumGeometryLodLevels(0, 1);
+    generateLightmapUV(planeModel);
+    generateLightmapUV(mushroomModel);
+    auto planeMaterial = cache->GetResource<Material>("Materials/DefaultGrey.xml");
+    auto mushroomMaterial = cache->GetResource<Material>("Materials/DefaultGrey.xml"); //Mushroom
+    mushroomMaterial->SetVertexShaderDefines(mushroomMaterial->GetVertexShaderDefines() + " LIGHTMAP");
+    mushroomMaterial->SetPixelShaderDefines(mushroomMaterial->GetPixelShaderDefines() + " LIGHTMAP");
+    planeMaterial->SetVertexShaderDefines(planeMaterial->GetVertexShaderDefines() + " LIGHTMAP");
+    planeMaterial->SetPixelShaderDefines(planeMaterial->GetPixelShaderDefines() + " LIGHTMAP");
 
     // Create the Octree component to the scene. This is required before adding any drawable components, or else nothing will
     // show up. The default octree volume will be from (-1000, -1000, -1000) to (1000, 1000, 1000) in world coordinates; it
@@ -79,22 +114,36 @@ void StaticScene::CreateScene()
     // optimizing manner
     scene_->CreateComponent<Octree>();
 
+    Node* zoneNode = scene_->CreateChild("Zone");
+    Zone* zone = zoneNode->CreateComponent<Zone>();
+    zone->SetBoundingBox(BoundingBox(-1000, 1000));
+    zone->SetAmbientColor(Color::WHITE * 0.1f);
+
     // Create a child scene node (at world origin) and a StaticModel component into it. Set the StaticModel to show a simple
     // plane mesh with a "stone" material. Note that naming the scene nodes is optional. Scale the scene node larger
     // (100 x 100 world units)
-    Node* planeNode = scene_->CreateChild("Plane");
-    planeNode->SetScale(Vector3(100.0f, 1.0f, 100.0f));
+    Node* planeNode = scene_->CreateChild(/*"Plane"*/);
+//     planeNode->SetPosition(Vector3(0, -6, 0));
+    planeNode->SetScale(100.0f);
     auto* planeObject = planeNode->CreateComponent<StaticModel>();
-    planeObject->SetModel(cache->GetResource<Model>("Models/Plane.mdl"));
-    planeObject->SetMaterial(cache->GetResource<Material>("Materials/StoneTiled.xml"));
+    planeObject->SetModel(planeModel);
+    planeObject->SetMaterial(planeMaterial);
+    planeObject->SetLightmap(true);
+//     planeObject->SetCastShadows(true);
 
     // Create a directional light to the world so that we can see something. The light scene node's orientation controls the
     // light direction; we will use the SetDirection() function which calculates the orientation from a forward direction vector.
     // The light will use default settings (white light, no shadows)
     Node* lightNode = scene_->CreateChild("DirectionalLight");
-    lightNode->SetDirection(Vector3(0.6f, -1.0f, 0.8f)); // The direction vector does not need to be normalized
+    lightNode->SetDirection(Vector3(0.6f, -0.5f, 0.8f)); // The direction vector does not need to be normalized
+//     lightNode->SetPosition(Vector3(0.0f, 1.5f, 0.0f));
+//     lightNode->SetPosition(Vector3(0.0f, 0.0f, 0.0f));
     auto* light = lightNode->CreateComponent<Light>();
     light->SetLightType(LIGHT_DIRECTIONAL);
+//     light->SetLightType(LIGHT_POINT);
+//     light->SetRange(10.0f);
+    light->SetCastShadows(true);
+    light->SetColor(Color::WHITE);
 
     // Create more StaticModel objects to the scene, randomly positioned, rotated and scaled. For rotation, we construct a
     // quaternion from Euler angles where the Y angle (rotation about the Y axis) is randomized. The mushroom model contains
@@ -106,12 +155,16 @@ void StaticScene::CreateScene()
     for (unsigned i = 0; i < NUM_OBJECTS; ++i)
     {
         Node* mushroomNode = scene_->CreateChild("Mushroom");
+        //mushroomNode->SetScale(Vector3(2.0f, 2.0f, 2.0f));
+        //mushroomNode->SetPosition(Vector3(0.0f, 3.0f, 0.0f));
         mushroomNode->SetPosition(Vector3(Random(90.0f) - 45.0f, 0.0f, Random(90.0f) - 45.0f));
         mushroomNode->SetRotation(Quaternion(0.0f, Random(360.0f), 0.0f));
         mushroomNode->SetScale(0.5f + Random(2.0f));
         auto* mushroomObject = mushroomNode->CreateComponent<StaticModel>();
-        mushroomObject->SetModel(cache->GetResource<Model>("Models/Mushroom.mdl"));
-        mushroomObject->SetMaterial(cache->GetResource<Material>("Materials/Mushroom.xml"));
+        mushroomObject->SetModel(mushroomModel);
+        mushroomObject->SetMaterial(mushroomMaterial);
+        mushroomObject->SetLightmap(true);
+        mushroomObject->SetCastShadows(true);
     }
 
     // Create a scene node for the camera, which we will move around
@@ -121,6 +174,10 @@ void StaticScene::CreateScene()
 
     // Set an initial position for the camera scene node above the plane
     cameraNode_->SetPosition(Vector3(0.0f, 5.0f, 0.0f));
+
+    // Bake lights
+    auto glow = scene_->CreateComponent<GlowComponent>();
+    glow->Bake();
 }
 
 void StaticScene::CreateInstructions()

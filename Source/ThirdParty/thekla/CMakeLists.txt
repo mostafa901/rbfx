@@ -30,12 +30,11 @@ set(CMAKE_DEBUG_POSTFIX d)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--export-all-symbols")
 
-# Urho3D: Disable atlas library
-# add_library(libthekla_atlas
-#	src/thekla/thekla_atlas.cpp
-# )
+add_library(libthekla_atlas
+	src/thekla/thekla_atlas.cpp
+)
 
-# install(TARGETS libthekla_atlas DESTINATION lib/static)
+install(TARGETS libthekla_atlas DESTINATION lib/static)
 
 get_property(HEADER_DIRS DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 

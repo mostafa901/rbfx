@@ -40,6 +40,7 @@ namespace Urho3D
 
 class File;
 class PackageFile;
+class Texture2D;
 
 static const unsigned FIRST_REPLICATED_ID = 0x1;
 static const unsigned LAST_REPLICATED_ID = 0xffffff;
@@ -132,6 +133,11 @@ public:
     void MarkNetworkUpdate() override;
     /// Add a replication state that is tracking this scene.
     void AddReplicationState(NodeReplicationState* state) override;
+
+    /// Add lightmap texture.
+    void AddLightmap(const ea::string& lightmapTextureName);
+    /// Get lightmap texture.
+    Texture2D* GetLightmapTexture(unsigned index);
 
     /// Load from an XML file. Return true if successful.
     bool LoadXML(Deserializer& source);
@@ -367,6 +373,10 @@ private:
     bool asyncLoading_;
     /// Threaded update flag.
     bool threadedUpdate_;
+
+    ResourceRefList lightmaps_;
+    bool lightmapTexturesDirty_{ false };
+    ea::vector<SharedPtr<Texture2D>> lightmapTextures_;
 };
 
 /// Register Scene library objects.

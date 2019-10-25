@@ -65,6 +65,10 @@ if (NOT MINI_URHO)
     endif ()
 endif ()
 
+if (URHO3D_GLOW)
+    define_engine_source_files (GLOW)
+endif ()
+
 if (URHO3D_IK)
     define_engine_source_files (IK)
 endif ()
@@ -189,7 +193,11 @@ elseif (TARGET Bullet)
 endif ()
 
 if (URHO3D_GLOW)
-    target_link_libraries(Urho3D PUBLIC nvmesh)
+    add_definitions(-DEMBREE_STATIC_LIB)
+    target_link_libraries(Urho3D PUBLIC nvmesh libthekla_atlas)
+    target_link_libraries(Urho3D PUBLIC embree)
+    target_include_directories(Urho3D PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../ThirdParty/embree/include>)
+    target_include_directories(Urho3D PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../ThirdParty/thekla/src>)
 endif ()
 
 foreach (dep ${THIRD_PARTY_DEPENDENCIES})
