@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -17,6 +17,8 @@
 #pragma once
 
 #define _CRT_SECURE_NO_WARNINGS
+
+//__asm__(".symver memcpy,memcpy@GLIBC_2.2.5");
 
 #include <cstddef>
 #include <cassert>
@@ -97,21 +99,20 @@
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Macros
+/// Makros
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifdef __WIN32__
-#define dll_export __declspec(dllexport)
-#define dll_import __declspec(dllimport)
+#define __dllexport __declspec(dllexport)
+#define __dllimport __declspec(dllimport)
 #else
-#define dll_export __attribute__ ((visibility ("default")))
-#define dll_import 
+#define __dllexport __attribute__ ((visibility ("default")))
+#define __dllimport 
 #endif
 
 #ifdef __WIN32__
-#if !defined(__noinline)
+#undef __noinline
 #define __noinline             __declspec(noinline)
-#endif
 //#define __forceinline        __forceinline
 //#define __restrict           __restrict
 #if defined(__INTEL_COMPILER)
@@ -119,12 +120,8 @@
 #else
 #define __restrict__           //__restrict // causes issues with MSVC
 #endif
-#if !defined(__thread)
 #define __thread               __declspec(thread)
-#endif
-#if !defined(__aligned)
 #define __aligned(...)           __declspec(align(__VA_ARGS__))
-#endif
 //#define __FUNCTION__           __FUNCTION__
 #define debugbreak()           __debugbreak()
 
@@ -197,9 +194,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 /* default floating-point type */
-namespace embree {
-  typedef float real;
-}
+typedef float real;
 
 /* windows does not have ssize_t */
 #if defined(__WIN32__)
@@ -256,7 +251,6 @@ __forceinline std::string toString(long long value) {
 #pragma warning(disable:4503) // decorated name length exceeded, name was truncated
 #pragma warning(disable:4180) // qualifier applied to function type has no meaning; ignored
 #pragma warning(disable:4258) // definition from the for loop is ignored; the definition from the enclosing scope is used
-#pragma warning(disable:4789) // buffer '' of size 8 bytes will be overrun; 32 bytes will be written starting at offset 0
 #endif
 
 #if defined(__clang__) && !defined(__INTEL_COMPILER)
@@ -359,7 +353,7 @@ namespace embree
   template <typename Closure>
     OnScopeExitHelper<Closure> OnScopeExit(const Closure f) {
     return OnScopeExitHelper<Closure>(f);
-  }
+  };
 
 #define STRING_JOIN2(arg1, arg2) DO_STRING_JOIN2(arg1, arg2)
 #define DO_STRING_JOIN2(arg1, arg2) arg1 ## arg2
@@ -370,5 +364,4 @@ namespace embree
     std::unique_ptr<Ty> make_unique(Ty* ptr) {
     return std::unique_ptr<Ty>(ptr);
   }
-
 }

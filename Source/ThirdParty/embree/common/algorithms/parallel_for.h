@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -16,10 +16,10 @@
 
 #pragma once
 
-#include "../tasking/taskscheduler.h"
+#include "../common/tasking/taskscheduler.h"
 #include "../sys/array.h"
 #include "../math/math.h"
-#include "../math/range.h"
+#include "../common/math/range.h"
 
 namespace embree
 {

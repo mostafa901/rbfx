@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -41,8 +41,8 @@ namespace embree
       __forceinline PrimInfoExtRange(EmptyTy)
         : CentGeomBBox3fa(EmptyTy()), extended_range<size_t>(0,0,0) {}
 
-      __forceinline PrimInfoExtRange(size_t begin, size_t end, size_t ext_end, const CentGeomBBox3fa& centGeomBounds) 
-        : CentGeomBBox3fa(centGeomBounds), extended_range<size_t>(begin,end,ext_end) {}
+      __forceinline PrimInfoExtRange(size_t begin, size_t end, size_t ext_end, const BBox3fa& geomBounds, const BBox3fa& centBounds) 
+        : CentGeomBBox3fa(geomBounds,centBounds), extended_range<size_t>(begin,end,ext_end) {}
       
       __forceinline float leafSAH() const { 
 	return expectedApproxHalfArea(geomBounds)*float(size()); 
@@ -108,7 +108,11 @@ namespace embree
       };
     
     /*! Performs standard object binning */
-    template<typename PrimitiveSplitterFactory, typename PrimRef, size_t OBJECT_BINS, size_t SPATIAL_BINS>
+#if defined(__AVX512F__)
+    template<typename PrimitiveSplitterFactory, typename PrimRef, size_t OBJECT_BINS = 16, size_t SPATIAL_BINS = 16>
+#else
+      template<typename PrimitiveSplitterFactory, typename PrimRef, size_t OBJECT_BINS = 32, size_t SPATIAL_BINS = 16>
+#endif
       struct HeuristicArraySpatialSAH
       {
         typedef BinSplit<OBJECT_BINS> ObjectSplit;
@@ -293,13 +297,10 @@ namespace embree
           
           const float fpos = split.mapping.pos(split.pos,split.dim);
         
-          const unsigned int mask = 0xFFFFFFFF >> RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS;
-
           parallel_for( set.begin(), set.end(), CREATE_SPLITS_STEP_SIZE, [&](const range<size_t>& r) {
               for (size_t i=r.begin();i<r.end();i++)
               {
-                const unsigned int splits = prims0[i].geomID() >> (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS);
-                //std::cout << "i " << i << " splits " << splits << std::endl;
+                const unsigned int splits = prims0[i].geomID() >> 24;
 
                 if (likely(splits <= 1)) continue; /* todo: does this ever happen ? */
 
@@ -317,12 +318,12 @@ namespace embree
                   // no empty splits
                   if (unlikely(left.bounds().empty() || right.bounds().empty())) continue;
                 
-                  left.lower.u  = (left.lower.u  & mask) | ((splits-1) << (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS));
-                  right.lower.u = (right.lower.u & mask) | ((splits-1) << (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS));
+                  left.lower.a  = (left.lower.a & 0x00FFFFFF) | (splits << 24);
+                  right.lower.a = (right.lower.a & 0x00FFFFFF) | (splits << 24);
 
                   const size_t ID = ext_elements.fetch_add(1);
 
-                  /* break if the number of subdivided elements are greater than the maximum allowed size */
+                  /* break if the number of subdivided elements are greater than the maximal allowed size */
                   if (unlikely(ID >= max_ext_range_size)) 
                     break;
 
@@ -390,19 +391,26 @@ namespace embree
           const unsigned int splitDim = split.dim;
           const unsigned int splitDimMask = (unsigned int)1 << splitDim; 
 
-          const typename ObjectBinner::vint vSplitPos(splitPos);
-          const typename ObjectBinner::vbool vSplitMask(splitDimMask);
+#if defined(__AVX512F__)
+          const vint16 vSplitPos(splitPos);
+          const vbool16 vSplitMask( splitDimMask );
+#else
+          const vint4 vSplitPos(splitPos);
+          const vbool4 vSplitMask( (int)splitDimMask );
+#endif
+
           size_t center = serial_partitioning(prims0,
                                               begin,end,local_left,local_right,
                                               [&] (const PrimRef& ref) { 
                                                 return split.mapping.bin_unsafe(ref,vSplitPos,vSplitMask);
                                               },
-                                              [] (PrimInfo& pinfo,const PrimRef& ref) { pinfo.add_center2(ref,ref.lower.u >> (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS)); });          
+                                              [] (PrimInfo& pinfo,const PrimRef& ref) { pinfo.add(ref.bounds(),ref.lower.a >> 24); });          
+          
           const size_t left_weight  = local_left.end;
           const size_t right_weight = local_right.end;
 
-          new (&lset) PrimInfoExtRange(begin,center,center,local_left);
-          new (&rset) PrimInfoExtRange(center,end,end,local_right);
+          new (&lset) PrimInfoExtRange(begin,center,center,local_left.geomBounds,local_left.centBounds);
+          new (&rset) PrimInfoExtRange(center,end,end,local_right.geomBounds,local_right.centBounds);
 
           assert(area(lset.geomBounds) >= 0.0f);
           assert(area(rset.geomBounds) >= 0.0f);
@@ -432,13 +440,13 @@ namespace embree
                                                 const Vec3fa c = ref.bounds().center();
                                                 return any(((vint4)mapping.bin(c) < vSplitPos) & vSplitMask); 
                                               },
-                                              [] (PrimInfo& pinfo,const PrimRef& ref) { pinfo.add_center2(ref,ref.lower.u >> (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS)); });
+                                              [] (PrimInfo& pinfo,const PrimRef& ref) { pinfo.add(ref.bounds(),ref.lower.a >> 24); });          
 
           const size_t left_weight  = local_left.end;
           const size_t right_weight = local_right.end;
           
-          new (&lset) PrimInfoExtRange(begin,center,center,local_left);
-          new (&rset) PrimInfoExtRange(center,end,end,local_right);
+          new (&lset) PrimInfoExtRange(begin,center,center,local_left.geomBounds,local_left.centBounds);
+          new (&rset) PrimInfoExtRange(center,end,end,local_right.geomBounds,local_right.centBounds);
           assert(area(lset.geomBounds) >= 0.0f);
           assert(area(rset.geomBounds) >= 0.0f);
           return std::pair<size_t,size_t>(left_weight,right_weight);
@@ -451,19 +459,24 @@ namespace embree
         {
           const size_t begin = set.begin();
           const size_t end   = set.end();
-          PrimInfo left(empty);
-          PrimInfo right(empty);
+          PrimInfo left; left.reset(); 
+          PrimInfo right; right.reset();
           const unsigned int splitPos = split.pos;
           const unsigned int splitDim = split.dim;
           const unsigned int splitDimMask = (unsigned int)1 << splitDim;
 
-          const typename ObjectBinner::vint vSplitPos(splitPos);
-          const typename ObjectBinner::vbool vSplitMask(splitDimMask);
+#if defined(__AVX512F__)
+          const vint16 vSplitPos(splitPos);
+          const vbool16 vSplitMask( (int)splitDimMask );
+#else
+          const vint4 vSplitPos(splitPos);
+          const vbool4 vSplitMask( (int)splitDimMask );
+#endif
           auto isLeft = [&] (const PrimRef &ref) { return split.mapping.bin_unsafe(ref,vSplitPos,vSplitMask); };
 
           const size_t center = parallel_partitioning(
             prims0,begin,end,EmptyTy(),left,right,isLeft,
-            [] (PrimInfo &pinfo,const PrimRef &ref) { pinfo.add_center2(ref,ref.lower.u >> (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS)); },
+            [] (PrimInfo &pinfo,const PrimRef &ref) { pinfo.add(ref.bounds(),ref.lower.a >> 24); },
             [] (PrimInfo &pinfo0,const PrimInfo &pinfo1) { pinfo0.merge(pinfo1); },
             PARALLEL_PARTITION_BLOCK_SIZE);
 
@@ -473,8 +486,8 @@ namespace embree
           left.begin  = begin;  left.end  = center; 
           right.begin = center; right.end = end;
           
-          new (&lset) PrimInfoExtRange(begin,center,center,left);
-          new (&rset) PrimInfoExtRange(center,end,end,right);
+          new (&lset) PrimInfoExtRange(begin,center,center,left.geomBounds,left.centBounds);
+          new (&rset) PrimInfoExtRange(center,end,end,right.geomBounds,right.centBounds);
 
           assert(area(left.geomBounds) >= 0.0f);
           assert(area(right.geomBounds) >= 0.0f);
@@ -486,8 +499,8 @@ namespace embree
         {
           const size_t begin = set.begin();
           const size_t end   = set.end();
-          PrimInfo left(empty);
-          PrimInfo right(empty);
+          PrimInfo left; left.reset(); 
+          PrimInfo right; right.reset();
           const unsigned int splitPos = split.pos;
           const unsigned int splitDim = split.dim;
           const unsigned int splitDimMask = (unsigned int)1 << splitDim;
@@ -503,7 +516,7 @@ namespace embree
 
           const size_t center = parallel_partitioning(
             prims0,begin,end,EmptyTy(),left,right,isLeft,
-            [] (PrimInfo &pinfo,const PrimRef &ref) { pinfo.add_center2(ref,ref.lower.u >> (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS)); },
+            [] (PrimInfo &pinfo,const PrimRef &ref) { pinfo.add(ref.bounds(),ref.lower.a >> 24); },
             [] (PrimInfo &pinfo0,const PrimInfo &pinfo1) { pinfo0.merge(pinfo1); },
             PARALLEL_PARTITION_BLOCK_SIZE);
 
@@ -513,8 +526,8 @@ namespace embree
           left.begin  = begin;  left.end  = center; 
           right.begin = center; right.end = end;
           
-          new (&lset) PrimInfoExtRange(begin,center,center,left);
-          new (&rset) PrimInfoExtRange(center,end,end,right);
+          new (&lset) PrimInfoExtRange(begin,center,center,left.geomBounds,left.centBounds);
+          new (&rset) PrimInfoExtRange(center,end,end,right.geomBounds,right.centBounds);
 
           assert(area(left.geomBounds) >= 0.0f);
           assert(area(right.geomBounds) >= 0.0f);
@@ -537,18 +550,18 @@ namespace embree
 
           PrimInfo left(empty);
           for (size_t i=begin; i<center; i++) {
-            left.add_center2(prims0[i],prims0[i].lower.u >> (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS));
+            left.add(prims0[i].bounds(),prims0[i].lower.a >> 24);
           }
           const size_t lweight = left.end;
           
           PrimInfo right(empty);
           for (size_t i=center; i<end; i++) {
-            right.add_center2(prims0[i],prims0[i].lower.u >> (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS));	
+            right.add(prims0[i].bounds(),prims0[i].lower.a >> 24);	
           }
           const size_t rweight = right.end;
 
-          new (&lset) PrimInfoExtRange(begin,center,center,left);
-          new (&rset) PrimInfoExtRange(center,end,end,right);
+          new (&lset) PrimInfoExtRange(begin,center,center,left.geomBounds,left.centBounds);
+          new (&rset) PrimInfoExtRange(center,end,end,right.geomBounds,right.centBounds);
 
           /* if we have an extended range */
           if (set.has_ext_range()) {

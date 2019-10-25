@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -28,10 +28,8 @@ namespace embree
     /* Virtual interface to query information about the triangle type */
     struct Type : public PrimitiveType
     {
-      const char* name() const;
-      size_t sizeActive(const char* This) const;
-      size_t sizeTotal(const char* This) const;
-      size_t getBytes(const char* This) const;
+      Type();
+      size_t size(const char* This) const;
     };
     static Type type;
 
@@ -40,7 +38,7 @@ namespace embree
     /* primitive supports multiple time segments */
     static const bool singleTimeSegment = false;
 
-    /* Returns maximum number of stored triangles */
+    /* Returns maximal number of stored triangles */
     static __forceinline size_t max_size() { return M; }
 
     /* Returns required number of primitive blocks for N primitives */
@@ -52,43 +50,43 @@ namespace embree
     __forceinline TriangleMi() {  }
 
     /* Construction from vertices and IDs */
-    __forceinline TriangleMi(const vuint<M>& v0,
-                             const vuint<M>& v1,
-                             const vuint<M>& v2,
-                             const vuint<M>& geomIDs,
-                             const vuint<M>& primIDs)
+    __forceinline TriangleMi(const vint<M>& v0,
+                             const vint<M>& v1,
+                             const vint<M>& v2,
+                             const vint<M>& geomIDs,
+                             const vint<M>& primIDs)
       : v0(v0), v1(v1), v2(v2), geomIDs(geomIDs), primIDs(primIDs) {}
 
     /* Returns a mask that tells which triangles are valid */
-    __forceinline vbool<M> valid() const { return primIDs != vuint<M>(-1); }
+    __forceinline vbool<M> valid() const { return primIDs != vint<M>(-1); }
 
     /* Returns if the specified triangle is valid */
     __forceinline bool valid(const size_t i) const { assert(i<M); return primIDs[i] != -1; }
 
     /* Returns the number of stored triangles */
-    __forceinline size_t size() const { return bsf(~movemask(valid())); }
+    __forceinline size_t size() const { return __bsf(~movemask(valid())); }
 
     /* Returns the geometry IDs */
-    __forceinline vuint<M> geomID() const { return geomIDs; }
-    __forceinline unsigned int geomID(const size_t i) const { assert(i<M); return geomIDs[i]; }
+    __forceinline vint<M> geomID() const { return geomIDs; }
+    __forceinline int geomID(const size_t i) const { assert(i<M); return geomIDs[i]; }
 
     /* Returns the primitive IDs */
-    __forceinline vuint<M> primID() const { return primIDs; }
-    __forceinline unsigned int primID(const size_t i) const { assert(i<M); return primIDs[i]; }
+    __forceinline vint<M> primID() const { return primIDs; }
+    __forceinline int primID(const size_t i) const { assert(i<M); return primIDs[i]; }
 
     /* loads a single vertex */
-    __forceinline Vec3f& getVertex(const vuint<M>& v, const size_t index, const Scene *const scene) const
+    __forceinline Vec3f& getVertex(const vint<M>& v, const size_t index, const Scene *const scene) const
     {
-      const float* vertices = scene->vertices[geomID(index)];
+      const int* vertices = scene->vertices[geomID(index)];
       return (Vec3f&) vertices[v[index]];
     }
 
     template<typename T>
-    __forceinline Vec3<T> getVertex(const vuint<M>& v, const size_t index, const Scene *const scene, const size_t itime, const T& ftime) const
+    __forceinline Vec3<T> getVertex(const vint<M>& v, const size_t index, const Scene *const scene, const size_t itime, const T& ftime) const
     {
       const TriangleMesh* mesh = scene->get<TriangleMesh>(geomID(index));
-      const float* vertices0 = (const float*) mesh->vertexPtr(0,itime+0);
-      const float* vertices1 = (const float*) mesh->vertexPtr(0,itime+1);
+      const int* vertices0 = (const int*) mesh->vertexPtr(0,itime+0);
+      const int* vertices1 = (const int*) mesh->vertexPtr(0,itime+1);
       const Vec3fa v0 = Vec3fa::loadu(vertices0+v[index]);
       const Vec3fa v1 = Vec3fa::loadu(vertices1+v[index]);
       const Vec3<T> p0(v0.x,v0.y,v0.z);
@@ -97,15 +95,15 @@ namespace embree
     }
 
     template<int K, typename T>
-    __forceinline Vec3<T> getVertex(const vbool<K>& valid, const vuint<M>& v, const size_t index, const Scene *const scene, const vint<K>& itime, const T& ftime) const
+    __forceinline Vec3<T> getVertex(const vbool<K>& valid, const vint<M>& v, const size_t index, const Scene *const scene, const vint<K>& itime, const T& ftime) const
     {
       Vec3<T> p0, p1;
       const TriangleMesh* mesh = scene->get<TriangleMesh>(geomID(index));
 
-      for (size_t mask=movemask(valid), i=bsf(mask); mask; mask=btc(mask,i), i=bsf(mask))
+      for (size_t mask=movemask(valid), i=__bsf(mask); mask; mask=__btc(mask,i), i=__bsf(mask))
       {
-        const float* vertices0 = (const float*) mesh->vertexPtr(0,itime[i]+0);
-        const float* vertices1 = (const float*) mesh->vertexPtr(0,itime[i]+1);
+        const int* vertices0 = (const int*) mesh->vertexPtr(0,itime[i]+0);
+        const int* vertices1 = (const int*) mesh->vertexPtr(0,itime[i]+1);
         const Vec3fa v0 = Vec3fa::loadu(vertices0+v[index]);
         const Vec3fa v1 = Vec3fa::loadu(vertices1+v[index]);
         p0.x[i] = v0.x; p0.y[i] = v0.y; p0.z[i] = v0.z;
@@ -129,9 +127,9 @@ namespace embree
       const TriangleMesh* mesh = scene->get<TriangleMesh>(geomID(index));
 
       vfloat<K> ftime;
-      const vint<K> itime = mesh->timeSegment(time, ftime);
+      const vint<K> itime = getTimeSegment(time, vfloat<K>(mesh->fnumTimeSegments), ftime);
 
-      const size_t first = bsf(movemask(valid));
+      const size_t first = __bsf(movemask(valid));
       if (likely(all(valid,itime[first] == itime)))
       {
         p0 = getVertex(v0, index, scene, itime[first], ftime);
@@ -147,8 +145,11 @@ namespace embree
     __forceinline void gather(Vec3vf<M>& p0,
                               Vec3vf<M>& p1,
                               Vec3vf<M>& p2,
-                              const TriangleMesh* mesh,
-                              const int itime) const;
+                              const TriangleMesh* mesh0,
+                              const TriangleMesh* mesh1,
+                              const TriangleMesh* mesh2,
+                              const TriangleMesh* mesh3,
+                              const vint<M>& itime) const;
 
     __forceinline void gather(Vec3vf<M>& p0,
                               Vec3vf<M>& p1,
@@ -162,7 +163,7 @@ namespace embree
       BBox3fa bounds = empty;
       for (size_t i=0; i<M && valid(i); i++)
       {
-        const float* vertices = (const float*) scene->get<TriangleMesh>(geomID(i))->vertexPtr(0,itime);
+        const int* vertices = (const int*) scene->get<TriangleMesh>(geomID(i))->vertexPtr(0,itime);
         bounds.extend(Vec3fa::loadu(vertices+v0[i]));
         bounds.extend(Vec3fa::loadu(vertices+v1[i]));
         bounds.extend(Vec3fa::loadu(vertices+v2[i]));
@@ -200,19 +201,19 @@ namespace embree
     /* Non-temporal store */
     __forceinline static void store_nt(TriangleMi* dst, const TriangleMi& src)
     {
-      vuint<M>::store_nt(&dst->v0,src.v0);
-      vuint<M>::store_nt(&dst->v1,src.v1);
-      vuint<M>::store_nt(&dst->v2,src.v2);
-      vuint<M>::store_nt(&dst->geomIDs,src.geomIDs);
-      vuint<M>::store_nt(&dst->primIDs,src.primIDs);
+      vint<M>::store_nt(&dst->v0,src.v0);
+      vint<M>::store_nt(&dst->v1,src.v1);
+      vint<M>::store_nt(&dst->v2,src.v2);
+      vint<M>::store_nt(&dst->geomIDs,src.geomIDs);
+      vint<M>::store_nt(&dst->primIDs,src.primIDs);
     }
 
     /* Fill triangle from triangle list */
     template<typename PrimRefT>
     __forceinline void fill(const PrimRefT* prims, size_t& begin, size_t end, Scene* scene)
     {
-      vuint<M> geomID = -1, primID = -1;
-      vuint<M> v0 = zero, v1 = zero, v2 = zero;
+      vint<M> geomID = -1, primID = -1;
+      vint<M> v0 = zero, v1 = zero, v2 = zero;
       const PrimRefT* prim = &prims[begin];
 
       for (size_t i=0; i<M; i++)
@@ -222,7 +223,7 @@ namespace embree
         if (begin<end) {
           geomID[i] = prim->geomID();
           primID[i] = prim->primID();
-          unsigned int int_stride = mesh->vertices0.getStride()/4;
+          unsigned int_stride = mesh->vertices0.getStride()/4;
           v0[i] = tri.v[0] * int_stride;
           v1[i] = tri.v[1] * int_stride;
           v2[i] = tri.v[2] * int_stride;
@@ -262,7 +263,7 @@ namespace embree
       for (size_t i=0; i<M; i++)
       {
         if (primID(i) == -1) break;
-        const unsigned int primId = primID(i);
+        const unsigned primId = primID(i);
         const TriangleMesh::Triangle& tri = mesh->triangle(primId);
         const Vec3fa p0 = mesh->vertex(tri.v[0]);
         const Vec3fa p1 = mesh->vertex(tri.v[1]);
@@ -273,12 +274,12 @@ namespace embree
     }
 
   public:
-    vuint<M> v0;         // 4 byte offset of 1st vertex
-    vuint<M> v1;         // 4 byte offset of 2nd vertex
-    vuint<M> v2;         // 4 byte offset of 3rd vertex
+    vint<M> v0;         // 4 byte offset of 1st vertex
+    vint<M> v1;         // 4 byte offset of 2nd vertex
+    vint<M> v2;         // 4 byte offset of 3rd vertex
   private:
-    vuint<M> geomIDs;    // geometry ID of mesh
-    vuint<M> primIDs;    // primitive ID of primitive inside mesh
+    vint<M> geomIDs;    // geometry ID of mesh
+    vint<M> primIDs;    // primitive ID of primitive inside mesh
   };
 
   template<>
@@ -287,10 +288,10 @@ namespace embree
                                            Vec3vf4& p2,
                                            const Scene* const scene) const
   {
-    const float* vertices0 = scene->vertices[geomID(0)];
-    const float* vertices1 = scene->vertices[geomID(1)];
-    const float* vertices2 = scene->vertices[geomID(2)];
-    const float* vertices3 = scene->vertices[geomID(3)];
+    const int* vertices0 = scene->vertices[geomID(0)];
+    const int* vertices1 = scene->vertices[geomID(1)];
+    const int* vertices2 = scene->vertices[geomID(2)];
+    const int* vertices3 = scene->vertices[geomID(3)];
     const vfloat4 a0 = vfloat4::loadu(vertices0 + v0[0]);
     const vfloat4 a1 = vfloat4::loadu(vertices1 + v0[1]);
     const vfloat4 a2 = vfloat4::loadu(vertices2 + v0[2]);
@@ -312,22 +313,28 @@ namespace embree
   __forceinline void TriangleMi<4>::gather(Vec3vf4& p0,
                                            Vec3vf4& p1,
                                            Vec3vf4& p2,
-                                           const TriangleMesh* mesh,
-                                           const int itime) const
+                                           const TriangleMesh* mesh0,
+                                           const TriangleMesh* mesh1,
+                                           const TriangleMesh* mesh2,
+                                           const TriangleMesh* mesh3,
+                                           const vint4& itime) const
   {
-    const float* vertices = (const float*) mesh->vertexPtr(0,itime);
-    const vfloat4 a0 = vfloat4::loadu(vertices + v0[0]);
-    const vfloat4 a1 = vfloat4::loadu(vertices + v0[1]);
-    const vfloat4 a2 = vfloat4::loadu(vertices + v0[2]);
-    const vfloat4 a3 = vfloat4::loadu(vertices + v0[3]);
-    const vfloat4 b0 = vfloat4::loadu(vertices + v1[0]);
-    const vfloat4 b1 = vfloat4::loadu(vertices + v1[1]);
-    const vfloat4 b2 = vfloat4::loadu(vertices + v1[2]);
-    const vfloat4 b3 = vfloat4::loadu(vertices + v1[3]);
-    const vfloat4 c0 = vfloat4::loadu(vertices + v2[0]);
-    const vfloat4 c1 = vfloat4::loadu(vertices + v2[1]);
-    const vfloat4 c2 = vfloat4::loadu(vertices + v2[2]);
-    const vfloat4 c3 = vfloat4::loadu(vertices + v2[3]);
+    const int* vertices0 = (const int*) mesh0->vertexPtr(0,itime[0]);
+    const int* vertices1 = (const int*) mesh1->vertexPtr(0,itime[1]);
+    const int* vertices2 = (const int*) mesh2->vertexPtr(0,itime[2]);
+    const int* vertices3 = (const int*) mesh3->vertexPtr(0,itime[3]);
+    const vfloat4 a0 = vfloat4::loadu(vertices0 + v0[0]);
+    const vfloat4 a1 = vfloat4::loadu(vertices1 + v0[1]);
+    const vfloat4 a2 = vfloat4::loadu(vertices2 + v0[2]);
+    const vfloat4 a3 = vfloat4::loadu(vertices3 + v0[3]);
+    const vfloat4 b0 = vfloat4::loadu(vertices0 + v1[0]);
+    const vfloat4 b1 = vfloat4::loadu(vertices1 + v1[1]);
+    const vfloat4 b2 = vfloat4::loadu(vertices2 + v1[2]);
+    const vfloat4 b3 = vfloat4::loadu(vertices3 + v1[3]);
+    const vfloat4 c0 = vfloat4::loadu(vertices0 + v2[0]);
+    const vfloat4 c1 = vfloat4::loadu(vertices1 + v2[1]);
+    const vfloat4 c2 = vfloat4::loadu(vertices2 + v2[2]);
+    const vfloat4 c3 = vfloat4::loadu(vertices3 + v2[3]);
     transpose(a0,a1,a2,a3,p0.x,p0.y,p0.z);
     transpose(b0,b1,b2,b3,p1.x,p1.y,p1.z);
     transpose(c0,c1,c2,c3,p2.x,p2.y,p2.z);
@@ -340,16 +347,20 @@ namespace embree
                                            const Scene *const scene,
                                            const float time) const
   {
-    const TriangleMesh* mesh = scene->get<TriangleMesh>(geomID(0)); // in mblur mode all geometries are identical
+    const TriangleMesh* mesh0 = scene->get<TriangleMesh>(geomID(0));
+    const TriangleMesh* mesh1 = scene->get<TriangleMesh>(geomID(1));
+    const TriangleMesh* mesh2 = scene->get<TriangleMesh>(geomID(2));
+    const TriangleMesh* mesh3 = scene->get<TriangleMesh>(geomID(3));
 
-    float ftime;
-    const int itime = mesh->timeSegment(time, ftime);
+    const vfloat4 numTimeSegments(mesh0->fnumTimeSegments, mesh1->fnumTimeSegments, mesh2->fnumTimeSegments, mesh3->fnumTimeSegments);
+    vfloat4 ftime;
+    const vint4 itime = getTimeSegment(vfloat4(time), numTimeSegments, ftime);
 
-    Vec3vf4 a0,a1,a2; gather(a0,a1,a2,mesh,itime);
-    Vec3vf4 b0,b1,b2; gather(b0,b1,b2,mesh,itime+1);
-    p0 = lerp(a0,b0,vfloat4(ftime));
-    p1 = lerp(a1,b1,vfloat4(ftime));
-    p2 = lerp(a2,b2,vfloat4(ftime));
+    Vec3vf4 a0,a1,a2; gather(a0,a1,a2,mesh0,mesh1,mesh2,mesh3,itime);
+    Vec3vf4 b0,b1,b2; gather(b0,b1,b2,mesh0,mesh1,mesh2,mesh3,itime+1);
+    p0 = lerp(a0,b0,ftime);
+    p1 = lerp(a1,b1,ftime);
+    p2 = lerp(a2,b2,ftime);
   }
 
   template<int M>

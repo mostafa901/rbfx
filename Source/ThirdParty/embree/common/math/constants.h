@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -26,25 +26,21 @@
 
 namespace embree
 {
-  static MAYBE_UNUSED const float one_over_255 = 1.0f/255.0f;
-  static MAYBE_UNUSED const float min_rcp_input = 1E-18f;  // for abs(x) >= min_rcp_input the newton raphson rcp calculation does not fail
+  static const float one_over_255 = 1.0f/255.0f;
+  static const float min_rcp_input = 1E-18f;  // for abs(x) >= min_rcp_input the newton raphson rcp calculation does not fail
 
   /* we consider floating point numbers in that range as valid input numbers */
-  static MAYBE_UNUSED float FLT_LARGE = 1.844E18f;
+  static float FLT_LARGE = 1.844E18f;
 
-  struct TrueTy {
+  static struct TrueTy {
     __forceinline operator bool( ) const { return true; }
-  };
+  } True MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED TrueTy True;
-
-  struct FalseTy {
+  static struct FalseTy {
     __forceinline operator bool( ) const { return false; }
-  };
-
-  extern MAYBE_UNUSED FalseTy False;
+  } False MAYBE_UNUSED;
   
-  struct ZeroTy
+  static struct ZeroTy
   {
     __forceinline operator          double   ( ) const { return 0; }
     __forceinline operator          float    ( ) const { return 0; }
@@ -58,11 +54,9 @@ namespace embree
     __forceinline operator unsigned short    ( ) const { return 0; }
     __forceinline operator          char     ( ) const { return 0; }
     __forceinline operator unsigned char     ( ) const { return 0; }
-  }; 
+  } zero MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED ZeroTy zero;
-
-  struct OneTy
+  static struct OneTy
   {
     __forceinline operator          double   ( ) const { return 1; }
     __forceinline operator          float    ( ) const { return 1; }
@@ -76,11 +70,9 @@ namespace embree
     __forceinline operator unsigned short    ( ) const { return 1; }
     __forceinline operator          char     ( ) const { return 1; }
     __forceinline operator unsigned char     ( ) const { return 1; }
-  };
+  } one MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED OneTy one;
-
-  struct NegInfTy
+  static struct NegInfTy
   {
     __forceinline operator          double   ( ) const { return -std::numeric_limits<double>::infinity(); }
     __forceinline operator          float    ( ) const { return -std::numeric_limits<float>::infinity(); }
@@ -95,11 +87,9 @@ namespace embree
     __forceinline operator          char     ( ) const { return std::numeric_limits<char>::min(); }
     __forceinline operator unsigned char     ( ) const { return std::numeric_limits<unsigned char>::min(); }
 
-  };
+  } neg_inf MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED NegInfTy neg_inf;
-
-  struct PosInfTy
+  static struct PosInfTy
   {
     __forceinline operator          double   ( ) const { return std::numeric_limits<double>::infinity(); }
     __forceinline operator          float    ( ) const { return std::numeric_limits<float>::infinity(); }
@@ -113,97 +103,65 @@ namespace embree
     __forceinline operator unsigned short    ( ) const { return std::numeric_limits<unsigned short>::max(); }
     __forceinline operator          char     ( ) const { return std::numeric_limits<char>::max(); }
     __forceinline operator unsigned char     ( ) const { return std::numeric_limits<unsigned char>::max(); }
-  };
+  } inf MAYBE_UNUSED, pos_inf MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED PosInfTy inf;
-  extern MAYBE_UNUSED PosInfTy pos_inf;
-
-  struct NaNTy
+  static struct NaNTy
   {
     __forceinline operator double( ) const { return std::numeric_limits<double>::quiet_NaN(); }
     __forceinline operator float ( ) const { return std::numeric_limits<float>::quiet_NaN(); }
-  };
+  } nan MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED NaNTy nan;
-
-  struct UlpTy
+  static struct UlpTy
   {
     __forceinline operator double( ) const { return std::numeric_limits<double>::epsilon(); }
     __forceinline operator float ( ) const { return std::numeric_limits<float>::epsilon(); }
-  };
+  } ulp MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED UlpTy ulp;
-
-  struct PiTy
+  static struct PiTy
   {
     __forceinline operator double( ) const { return double(M_PI); }
     __forceinline operator float ( ) const { return float(M_PI); }
-  };
+  } pi MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED PiTy pi;
-
-  struct OneOverPiTy
+  static struct OneOverPiTy
   {
     __forceinline operator double( ) const { return double(M_1_PI); }
     __forceinline operator float ( ) const { return float(M_1_PI); }
-  };
+  } one_over_pi MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED OneOverPiTy one_over_pi;
-
-  struct TwoPiTy
+  static struct TwoPiTy
   {
     __forceinline operator double( ) const { return double(2.0*M_PI); }
     __forceinline operator float ( ) const { return float(2.0*M_PI); }
-  };
+  } two_pi MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED TwoPiTy two_pi;
-
-  struct OneOverTwoPiTy
+  static struct OneOverTwoPiTy
   {
     __forceinline operator double( ) const { return double(0.5*M_1_PI); }
     __forceinline operator float ( ) const { return float(0.5*M_1_PI); }
-  };
+  } one_over_two_pi MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED OneOverTwoPiTy one_over_two_pi;
-
-  struct FourPiTy
+  static struct FourPiTy
   {
     __forceinline operator double( ) const { return double(4.0*M_PI); } 
     __forceinline operator float ( ) const { return float(4.0*M_PI); }
-  };
+  } four_pi MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED FourPiTy four_pi;
-
-  struct OneOverFourPiTy
+  static struct OneOverFourPiTy
   {
     __forceinline operator double( ) const { return double(0.25*M_1_PI); }
     __forceinline operator float ( ) const { return float(0.25*M_1_PI); }
-  };
+  } one_over_four_pi MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED OneOverFourPiTy one_over_four_pi;
+  static struct StepTy {
+  } step MAYBE_UNUSED;
 
-  struct StepTy {
-  };
+  static struct ReverseStepTy {
+  } reverse_step MAYBE_UNUSED;
 
-  extern MAYBE_UNUSED StepTy step;
+  static struct EmptyTy {
+  } empty MAYBE_UNUSED;
 
-  struct ReverseStepTy {
-  };
-
-  extern MAYBE_UNUSED ReverseStepTy reverse_step;
-
-  struct EmptyTy {
-  };
-
-  extern MAYBE_UNUSED EmptyTy empty;
-
-  struct FullTy {
-  };
-
-  extern MAYBE_UNUSED FullTy full;
-
-  struct UndefinedTy {
-  };
-
-  extern MAYBE_UNUSED UndefinedTy undefined;
+  static struct FullTy {
+  } full MAYBE_UNUSED;
 }

@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -21,11 +21,8 @@
 
 namespace embree
 {
-  static const unsigned int RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS = 5;
-
   namespace isa
   {
-
     /*! mapping into bins */
     template<size_t BINS>
       struct SpatialBinMapping
@@ -38,9 +35,9 @@ namespace embree
         {
           const vfloat4 lower = (vfloat4) pinfo.geomBounds.lower;
           const vfloat4 upper = (vfloat4) pinfo.geomBounds.upper;
-          const vfloat4 eps = 128.0f*vfloat4(ulp)*max(abs(lower),abs(upper));
-          const vfloat4 diag = max(eps,(vfloat4) pinfo.geomBounds.size());
-          scale = select(upper-lower <= eps,vfloat4(0.0f),vfloat4(BINS)/diag);
+          const vbool4 ulpsized = upper - lower <= max(vfloat4(1E-19f),128.0f*vfloat4(ulp)*max(abs(lower),abs(upper)));
+          const vfloat4 diag = (vfloat4) pinfo.geomBounds.size();
+          scale = select(ulpsized,vfloat4(0.0f),vfloat4(BINS)/diag);
           ofs  = (vfloat4) pinfo.geomBounds.lower;
           inv_scale = 1.0f / scale; 
         }
@@ -159,8 +156,8 @@ namespace embree
         assert(endID < BINS);
         assert(binID < BINS);
 
-        numBegin[beginID][dim]+=(unsigned int)n;
-        numEnd  [endID][dim]+=(unsigned int)n;
+        numBegin[beginID][dim]+=n;
+        numEnd  [endID][dim]+=n;
         bounds  [binID][dim].extend(b);        
       }
 
@@ -180,7 +177,7 @@ namespace embree
         for (size_t i=0; i<N; i++)
         {
           const PrimRef prim = prims[i];
-          unsigned splits = prim.geomID() >> (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS);
+          unsigned splits = prim.geomID() >> 24;
 
           if (unlikely(splits == 1))
           {
@@ -351,8 +348,8 @@ namespace embree
       {
         /* sweep from right to left and compute parallel prefix of merged bounds */
         vfloat4 rAreas[BINS];
-        vuint4 rCounts[BINS];
-        vuint4 count = 0; BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
+        vint4 rCounts[BINS];
+        vint4 count = 0; BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
         for (size_t i=BINS-1; i>0; i--)
         {
           count += numEnd[i];
@@ -364,8 +361,8 @@ namespace embree
         }
         
         /* sweep from left to right and compute SAH */
-        vuint4 blocks_add = (1 << blocks_shift)-1;
-        vuint4 ii = 1; vfloat4 vbestSAH = pos_inf; vuint4 vbestPos = 0; vuint4 vbestlCount = 0; vuint4 vbestrCount = 0;
+        vint4 blocks_add = (1 << blocks_shift)-1;
+        vint4 ii = 1; vfloat4 vbestSAH = pos_inf; vint4 vbestPos = 0; vint4 vbestlCount = 0; vint4 vbestrCount = 0;
         count = 0; bx = empty; by = empty; bz = empty;
         for (size_t i=1; i<BINS; i++, ii+=1)
         {
@@ -375,10 +372,9 @@ namespace embree
           bz.extend(bounds[i-1][2]); float Az = halfArea(bz);
           const vfloat4 lArea = vfloat4(Ax,Ay,Az,Az);
           const vfloat4 rArea = rAreas[i];
-          const vuint4 lCount = (count     +blocks_add) >> (unsigned int)(blocks_shift);
-          const vuint4 rCount = (rCounts[i]+blocks_add) >> (unsigned int)(blocks_shift);
+          const vint4 lCount = (count     +blocks_add) >> int(blocks_shift);
+          const vint4 rCount = (rCounts[i]+blocks_add) >> int(blocks_shift);
           const vfloat4 sah = madd(lArea,vfloat4(lCount),rArea*vfloat4(rCount));
-          // const vfloat4 sah = madd(lArea,vfloat4(vint4(lCount)),rArea*vfloat4(vint4(rCount)));
           const vbool4 mask = sah < vbestSAH;
           vbestPos      = select(mask,ii ,vbestPos);
           vbestSAH      = select(mask,sah,vbestSAH);
@@ -390,8 +386,8 @@ namespace embree
         float bestSAH = inf;
         int   bestDim = -1;
         int   bestPos = 0;
-        unsigned int   bestlCount = 0;
-        unsigned int   bestrCount = 0;
+        int   bestlCount = 0;
+        int   bestrCount = 0;
         for (int dim=0; dim<3; dim++) 
         {
           /* ignore zero sized dimensions */
@@ -419,8 +415,8 @@ namespace embree
       
     private:
       BBox3fa bounds[BINS][3];  //!< geometry bounds for each bin in each dimension
-      vuint4    numBegin[BINS];   //!< number of primitives starting in bin
-      vuint4    numEnd[BINS];     //!< number of primitives ending in bin
+      vint4    numBegin[BINS];   //!< number of primitives starting in bin
+      vint4    numEnd[BINS];     //!< number of primitives ending in bin
     };
   }
 }

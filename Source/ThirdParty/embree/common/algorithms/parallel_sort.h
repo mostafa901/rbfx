@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -266,7 +266,7 @@ namespace embree
   template<typename Ty, typename Key>
     class ParallelRadixSort
   {
-    static const size_t MAX_TASKS = 64;
+    static const size_t MAX_TASKS = 512;
     static const size_t BITS = 8;
     static const size_t BUCKETS = (1 << BITS);
     typedef unsigned int TyRadixCount[BUCKETS];
@@ -275,17 +275,10 @@ namespace embree
       static bool compare(const T& v0, const T& v1) {
       return (Key)v0 < (Key)v1;
     }
-
-  private:
-    ParallelRadixSort (const ParallelRadixSort& other) DELETED; // do not implement
-    ParallelRadixSort& operator= (const ParallelRadixSort& other) DELETED; // do not implement
-
     
   public:
-    ParallelRadixSort (Ty* const src, Ty* const tmp, const size_t N)
-      : radixCount(nullptr), src(src), tmp(tmp), N(N) {}
-
-    void sort(const size_t blockSize)
+    ParallelRadixSort (Ty* const src, Ty* const tmp, const size_t N, const size_t blockSize)
+      : radixCount(nullptr), src(src), tmp(tmp), N(N)
     {
       assert(blockSize > 0);
       
@@ -302,12 +295,6 @@ namespace embree
         const size_t numThreads = min((N+blockSize-1)/blockSize,TaskScheduler::threadCount(),size_t(MAX_TASKS));
         tbbRadixSort(numThreads);
       }
-    }
-
-    ~ParallelRadixSort()
-    {
-      alignedFree(radixCount); 
-      radixCount = nullptr;
     }
     
   private:
@@ -415,7 +402,7 @@ namespace embree
     
     void tbbRadixSort(const size_t numTasks)
     {
-      radixCount = (TyRadixCount*) alignedMalloc(MAX_TASKS*sizeof(TyRadixCount),64);
+      radixCount = (TyRadixCount*) alignedMalloc(MAX_TASKS*sizeof(TyRadixCount));
       
       if (sizeof(Key) == sizeof(uint32_t)) {
         tbbRadixIteration(0*BITS,0,src,tmp,numTasks);
@@ -434,6 +421,8 @@ namespace embree
         tbbRadixIteration(6*BITS,0,src,tmp,numTasks);
         tbbRadixIteration(7*BITS,1,tmp,src,numTasks);
       }
+      alignedFree(radixCount); 
+      radixCount = nullptr;
     }
     
   private:
@@ -446,13 +435,13 @@ namespace embree
   template<typename Ty>
     void radix_sort(Ty* const src, Ty* const tmp, const size_t N, const size_t blockSize = 8192)
   {
-    ParallelRadixSort<Ty,Ty>(src,tmp,N).sort(blockSize);
+    ParallelRadixSort<Ty,Ty>(src,tmp,N,blockSize);
   }
   
   template<typename Ty, typename Key>
     void radix_sort(Ty* const src, Ty* const tmp, const size_t N, const size_t blockSize = 8192)
   {
-    ParallelRadixSort<Ty,Key>(src,tmp,N).sort(blockSize);
+    ParallelRadixSort<Ty,Key>(src,tmp,N,blockSize);
   }
   
   template<typename Ty>

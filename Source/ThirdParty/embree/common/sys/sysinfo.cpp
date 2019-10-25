@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -17,7 +17,6 @@
 #include "sysinfo.h"
 #include "intrinsics.h"
 #include "string.h"
-#include "ref.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 /// All Platforms
@@ -25,8 +24,6 @@
 
 namespace embree
 {
-  NullTy null;
-  
   std::string getPlatformName() 
   {
 #if defined(__LINUX__) && !defined(__X86_64__)
@@ -99,9 +96,6 @@ namespace embree
 
   CPUModel getCPUModel() 
   {
-    if (getCPUVendor() != "GenuineIntel")
-      return CPU_UNKNOWN;
-    
     int out[4];
     __cpuid(out, 0);
     if (out[0] < 1) return CPU_UNKNOWN;
@@ -122,7 +116,6 @@ namespace embree
     if (model == 0x2D) return CPU_CORE_SANDYBRIDGE;  // Core i7, SandyBridge
     if (model == 0x45) return CPU_HASWELL;           // Haswell
     if (model == 0x3C) return CPU_HASWELL;           // Haswell
-    if (model == 0x55) return CPU_SKYLAKE_SERVER;   // Skylake server based CPUs
     return CPU_UNKNOWN;
   }
 
@@ -135,7 +128,7 @@ namespace embree
     case CPU_CORE_SANDYBRIDGE: return "SandyBridge";
     case CPU_HASWELL         : return "Haswell";
     case CPU_KNIGHTS_LANDING : return "Knights Landing";
-    case CPU_SKYLAKE_SERVER  : return "Skylake Server";
+    case CPU_SKYLAKE         : return "Skylake";
     default                  : return "Unknown CPU";
     }
   }
@@ -238,39 +231,32 @@ namespace embree
       ymm_enabled = xmm_enabled && ((xcr0 & 0x04) == 0x04); /* checks if ymm state are enabled in XCR0 */
       zmm_enabled = ymm_enabled && ((xcr0 & 0xE0) == 0xE0); /* checks if OPMASK state, upper 256-bit of ZMM0-ZMM15 and ZMM16-ZMM31 state are enabled in XCR0 */
     }
-    if (xmm_enabled) cpu_features |= CPU_FEATURE_XMM_ENABLED;
-    if (ymm_enabled) cpu_features |= CPU_FEATURE_YMM_ENABLED;
-    if (zmm_enabled) cpu_features |= CPU_FEATURE_ZMM_ENABLED;
     
-    if (cpuid_leaf_1[EDX] & CPU_FEATURE_BIT_SSE   ) cpu_features |= CPU_FEATURE_SSE;
-    if (cpuid_leaf_1[EDX] & CPU_FEATURE_BIT_SSE2  ) cpu_features |= CPU_FEATURE_SSE2;
-    if (cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_SSE3  ) cpu_features |= CPU_FEATURE_SSE3;
-    if (cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_SSSE3 ) cpu_features |= CPU_FEATURE_SSSE3;
-    if (cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_SSE4_1) cpu_features |= CPU_FEATURE_SSE41;
-    if (cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_SSE4_2) cpu_features |= CPU_FEATURE_SSE42;
-    if (cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_POPCNT) cpu_features |= CPU_FEATURE_POPCNT;
-    
-    if (cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_AVX   ) cpu_features |= CPU_FEATURE_AVX | CPU_FEATURE_PSEUDO_HIFREQ256BIT;
-    if (cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_F16C  ) cpu_features |= CPU_FEATURE_F16C;
-    if (cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_RDRAND) cpu_features |= CPU_FEATURE_RDRAND;
-    if (cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX2  ) cpu_features |= CPU_FEATURE_AVX2;
-    if (cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_FMA3  ) cpu_features |= CPU_FEATURE_FMA3;
+    if (xmm_enabled && cpuid_leaf_1[EDX] & CPU_FEATURE_BIT_SSE   ) cpu_features |= CPU_FEATURE_SSE;
+    if (xmm_enabled && cpuid_leaf_1[EDX] & CPU_FEATURE_BIT_SSE2  ) cpu_features |= CPU_FEATURE_SSE2;
+    if (xmm_enabled && cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_SSE3  ) cpu_features |= CPU_FEATURE_SSE3;
+    if (xmm_enabled && cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_SSSE3 ) cpu_features |= CPU_FEATURE_SSSE3;
+    if (xmm_enabled && cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_SSE4_1) cpu_features |= CPU_FEATURE_SSE41;
+    if (xmm_enabled && cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_SSE4_2) cpu_features |= CPU_FEATURE_SSE42;
+    if (               cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_POPCNT) cpu_features |= CPU_FEATURE_POPCNT;
+    if (ymm_enabled && cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_AVX   ) cpu_features |= CPU_FEATURE_AVX;
+    if (xmm_enabled && cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_F16C  ) cpu_features |= CPU_FEATURE_F16C;
+    if (               cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_RDRAND) cpu_features |= CPU_FEATURE_RDRAND;
+    if (ymm_enabled && cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX2  ) cpu_features |= CPU_FEATURE_AVX2;
+    if (ymm_enabled && cpuid_leaf_1[ECX] & CPU_FEATURE_BIT_FMA3  ) cpu_features |= CPU_FEATURE_FMA3;
     if (cpuid_leaf_e1[ECX] & CPU_FEATURE_BIT_LZCNT) cpu_features |= CPU_FEATURE_LZCNT;
     if (cpuid_leaf_7 [EBX] & CPU_FEATURE_BIT_BMI1 ) cpu_features |= CPU_FEATURE_BMI1;
     if (cpuid_leaf_7 [EBX] & CPU_FEATURE_BIT_BMI2 ) cpu_features |= CPU_FEATURE_BMI2;
 
-    if (cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512F   ) cpu_features |= CPU_FEATURE_AVX512F;
-    if (cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512DQ  ) cpu_features |= CPU_FEATURE_AVX512DQ;
-    if (cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512PF  ) cpu_features |= CPU_FEATURE_AVX512PF;
-    if (cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512ER  ) cpu_features |= CPU_FEATURE_AVX512ER; 
-    if (cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512CD  ) cpu_features |= CPU_FEATURE_AVX512CD;
-    if (cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512BW  ) cpu_features |= CPU_FEATURE_AVX512BW;
-    if (cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512IFMA) cpu_features |= CPU_FEATURE_AVX512IFMA;
-    if (cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512VL  ) cpu_features |= CPU_FEATURE_AVX512VL;
-    if (cpuid_leaf_7[ECX] & CPU_FEATURE_BIT_AVX512VBMI) cpu_features |= CPU_FEATURE_AVX512VBMI;
-
-    if (getCPUModel() == CPU_SKYLAKE_SERVER)
-      cpu_features &= ~CPU_FEATURE_PSEUDO_HIFREQ256BIT;
+    if (zmm_enabled && cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512F   ) cpu_features |= CPU_FEATURE_AVX512F;
+    if (zmm_enabled && cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512DQ  ) cpu_features |= CPU_FEATURE_AVX512DQ;
+    if (zmm_enabled && cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512PF  ) cpu_features |= CPU_FEATURE_AVX512PF;
+    if (zmm_enabled && cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512ER  ) cpu_features |= CPU_FEATURE_AVX512ER; 
+    if (zmm_enabled && cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512CD  ) cpu_features |= CPU_FEATURE_AVX512CD;
+    if (zmm_enabled && cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512BW  ) cpu_features |= CPU_FEATURE_AVX512BW;
+    if (zmm_enabled && cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512IFMA) cpu_features |= CPU_FEATURE_AVX512IFMA;
+    if (zmm_enabled && cpuid_leaf_7[EBX] & CPU_FEATURE_BIT_AVX512VL  ) cpu_features |= CPU_FEATURE_AVX512VL;
+    if (zmm_enabled && cpuid_leaf_7[ECX] & CPU_FEATURE_BIT_AVX512VBMI) cpu_features |= CPU_FEATURE_AVX512VBMI;
 
     return cpu_features;
   }
@@ -278,9 +264,6 @@ namespace embree
   std::string stringOfCPUFeatures(int features)
   {
     std::string str;
-    if (features & CPU_FEATURE_XMM_ENABLED) str += "XMM ";
-    if (features & CPU_FEATURE_YMM_ENABLED) str += "YMM ";
-    if (features & CPU_FEATURE_ZMM_ENABLED) str += "ZMM ";
     if (features & CPU_FEATURE_SSE   ) str += "SSE ";
     if (features & CPU_FEATURE_SSE2  ) str += "SSE2 ";
     if (features & CPU_FEATURE_SSE3  ) str += "SSE3 ";
@@ -353,14 +336,12 @@ namespace embree
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <psapi.h>
 
 namespace embree
 {
   std::string getExecutableFileName() {
     char filename[1024];
-    if (!GetModuleFileName(nullptr, filename, sizeof(filename)))
-      return std::string();
+    if (!GetModuleFileName(nullptr, filename, sizeof(filename))) return std::string();
     return std::string(filename);
   }
 
@@ -414,20 +395,6 @@ namespace embree
   void sleepSeconds(double t) {
     Sleep(DWORD(1000.0*t));
   }
-
-  size_t getVirtualMemoryBytes()
-  {
-    PROCESS_MEMORY_COUNTERS info;
-    GetProcessMemoryInfo( GetCurrentProcess( ), &info, sizeof(info) );
-    return (size_t)info.QuotaPeakPagedPoolUsage;
-  }
-
-  size_t getResidentMemoryBytes()
-  {
-    PROCESS_MEMORY_COUNTERS info;
-    GetProcessMemoryInfo( GetCurrentProcess( ), &info, sizeof(info) );
-    return (size_t)info.WorkingSetSize;
-  }
 }
 #endif
 
@@ -444,28 +411,11 @@ namespace embree
 {
   std::string getExecutableFileName() 
   {
-    std::string pid = "/proc/" + toString(getpid()) + "/exe";
-    char buf[4096];
-    memset(buf,0,sizeof(buf));
-    if (readlink(pid.c_str(), buf, sizeof(buf)-1) == -1)
-      return std::string();
+    char pid[32]; sprintf(pid, "/proc/%d/exe", getpid());
+    char buf[1024];
+    int bytes = readlink(pid, buf, sizeof(buf)-1);
+    if (bytes != -1) buf[bytes] = '\0';
     return std::string(buf);
-  }
-
-  size_t getVirtualMemoryBytes()
-  {
-    size_t virt, resident, shared;
-    std::ifstream buffer("/proc/self/statm");
-    buffer >> virt >> resident >> shared;
-    return virt*sysconf(_SC_PAGE_SIZE);
-  }
-
-  size_t getResidentMemoryBytes()
-  {
-    size_t virt, resident, shared;
-    std::ifstream buffer("/proc/self/statm");
-    buffer >> virt >> resident >> shared;
-    return resident*sysconf(_SC_PAGE_SIZE);
   }
 }
 
@@ -484,20 +434,10 @@ namespace embree
   std::string getExecutableFileName()
   {
     const int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
-    char buf[4096];
-    memset(buf,0,sizeof(buf));
-    size_t len = sizeof(buf)-1;
-    if (sysctl(mib, 4, buf, &len, 0x0, 0) == -1)
-      return std::string();
+    char buf[1024];
+    size_t len = sizeof(buf);
+    if (sysctl(mib, 4, buf, &len, 0x0, 0) == -1) *buf = '\0';
     return std::string(buf);
-  }
-
-  size_t getVirtualMemoryBytes() {
-    return 0;
-  }
-   
-  size_t getResidentMemoryBytes() {
-    return 0;
   }
 }
 
@@ -515,19 +455,10 @@ namespace embree
 {
   std::string getExecutableFileName()
   {
-    char buf[4096];
+    char buf[1024];
     uint32_t size = sizeof(buf);
-    if (_NSGetExecutablePath(buf, &size) != 0)
-      return std::string();
+    if (_NSGetExecutablePath(buf, &size) != 0) return std::string();
     return std::string(buf);
-  }
-
-  size_t getVirtualMemoryBytes() {
-    return 0;
-  }
-   
-  size_t getResidentMemoryBytes() {
-    return 0;
   }
 }
 

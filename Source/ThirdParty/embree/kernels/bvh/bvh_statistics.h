@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -30,6 +30,7 @@ namespace embree
     typedef typename BVH::AlignedNodeMB AlignedNodeMB;
     typedef typename BVH::AlignedNodeMB4D AlignedNodeMB4D;
     typedef typename BVH::UnalignedNodeMB UnalignedNodeMB;
+    typedef typename BVH::TransformNode TransformNode;
     typedef typename BVH::QuantizedNode QuantizedNode;
 
     typedef typename BVH::NodeRef NodeRef;
@@ -94,16 +95,12 @@ namespace embree
 
         LeafStat ( double leafSAH = 0.0f, 
                    size_t numLeaves = 0,
-                   size_t numPrimsActive = 0,
-                   size_t numPrimsTotal = 0,
-                   size_t numPrimBlocks = 0,
-                   size_t numBytes = 0)
+                   size_t numPrims = 0,
+                   size_t numPrimBlocks = 0 )
         : leafSAH(leafSAH),
           numLeaves(numLeaves),
-          numPrimsActive(numPrimsActive),
-          numPrimsTotal(numPrimsTotal),
-          numPrimBlocks(numPrimBlocks),
-          numBytes(numBytes)
+          numPrims(numPrims),
+          numPrimBlocks(numPrimBlocks) 
         {
           for (size_t i=0; i<NHIST; i++)
             numPrimBlocksHistogram[i] = 0;
@@ -114,25 +111,23 @@ namespace embree
         }
 
         size_t bytes(BVH* bvh) const {
-          return numBytes;
+          return numPrimBlocks*bvh->primTy.bytes;
         }
 
         size_t size() const {
           return numLeaves;
         }
 
-        double fillRateNom (BVH* bvh) const { return double(numPrimsActive);  }
-        double fillRateDen (BVH* bvh) const { return double(numPrimsTotal);  }
+        double fillRateNom (BVH* bvh) const { return double(numPrims);  }
+        double fillRateDen (BVH* bvh) const { return double(bvh->primTy.blockSize*numPrimBlocks);  }
         double fillRate    (BVH* bvh) const { return fillRateNom(bvh)/fillRateDen(bvh); }
 
         __forceinline friend LeafStat operator+ ( const LeafStat& a, const LeafStat& b)
         {
           LeafStat stat(a.leafSAH + b.leafSAH,
                         a.numLeaves+b.numLeaves,
-                        a.numPrimsActive+b.numPrimsActive,
-                        a.numPrimsTotal+b.numPrimsTotal,
-                        a.numPrimBlocks+b.numPrimBlocks,
-                        a.numBytes+b.numBytes);
+                        a.numPrims+b.numPrims,
+                        a.numPrimBlocks+b.numPrimBlocks);
           for (size_t i=0; i<NHIST; i++) {
             stat.numPrimBlocksHistogram[i] += a.numPrimBlocksHistogram[i];
             stat.numPrimBlocksHistogram[i] += b.numPrimBlocksHistogram[i];
@@ -165,10 +160,8 @@ namespace embree
       public:
         double leafSAH;                    //!< SAH of the leaves only
         size_t numLeaves;                  //!< Number of leaf nodes.
-        size_t numPrimsActive;             //!< Number of active primitives (
-        size_t numPrimsTotal;              //!< Number of active and inactive primitives
+        size_t numPrims;                   //!< Number of primitives.
         size_t numPrimBlocks;              //!< Number of primitive blocks.
-        size_t numBytes;                   //!< Number of bytes of leaves.
         size_t numPrimBlocksHistogram[8];
       };
 
@@ -180,6 +173,7 @@ namespace embree
                   NodeStat<AlignedNodeMB> statAlignedNodesMB = NodeStat<AlignedNodeMB>(),
                   NodeStat<AlignedNodeMB4D> statAlignedNodesMB4D = NodeStat<AlignedNodeMB4D>(),
                   NodeStat<UnalignedNodeMB> statUnalignedNodesMB = NodeStat<UnalignedNodeMB>(),
+                  NodeStat<TransformNode> statTransformNodes = NodeStat<TransformNode>(),
                   NodeStat<QuantizedNode> statQuantizedNodes = NodeStat<QuantizedNode>())
 
       : depth(depth), 
@@ -189,6 +183,7 @@ namespace embree
         statAlignedNodesMB(statAlignedNodesMB),
         statAlignedNodesMB4D(statAlignedNodesMB4D),
         statUnalignedNodesMB(statUnalignedNodesMB),
+        statTransformNodes(statTransformNodes),
         statQuantizedNodes(statQuantizedNodes) {}
 
       double sah(BVH* bvh) const 
@@ -199,6 +194,7 @@ namespace embree
           statAlignedNodesMB.sah(bvh) + 
           statAlignedNodesMB4D.sah(bvh) + 
           statUnalignedNodesMB.sah(bvh) + 
+          statTransformNodes.sah(bvh) + 
           statQuantizedNodes.sah(bvh);
       }
       
@@ -209,6 +205,7 @@ namespace embree
           statAlignedNodesMB.bytes() + 
           statAlignedNodesMB4D.bytes() + 
           statUnalignedNodesMB.bytes() + 
+          statTransformNodes.bytes() + 
           statQuantizedNodes.bytes();
       }
 
@@ -220,6 +217,7 @@ namespace embree
           statAlignedNodesMB.size() + 
           statAlignedNodesMB4D.size() + 
           statUnalignedNodesMB.size() + 
+          statTransformNodes.size() + 
           statQuantizedNodes.size();
       }
 
@@ -231,6 +229,7 @@ namespace embree
           statAlignedNodesMB.fillRateNom() + 
           statAlignedNodesMB4D.fillRateNom() + 
           statUnalignedNodesMB.fillRateNom() + 
+          statTransformNodes.fillRateNom() + 
           statQuantizedNodes.fillRateNom();
         double den = statLeaf.fillRateDen(bvh) +
           statAlignedNodes.fillRateDen() + 
@@ -238,6 +237,7 @@ namespace embree
           statAlignedNodesMB.fillRateDen() + 
           statAlignedNodesMB4D.fillRateDen() + 
           statUnalignedNodesMB.fillRateDen() + 
+          statTransformNodes.fillRateDen() + 
           statQuantizedNodes.fillRateDen();
         return nom/den;
       }
@@ -251,6 +251,7 @@ namespace embree
                           a.statAlignedNodesMB + b.statAlignedNodesMB,
                           a.statAlignedNodesMB4D + b.statAlignedNodesMB4D,
                           a.statUnalignedNodesMB + b.statUnalignedNodesMB,
+                          a.statTransformNodes + b.statTransformNodes,
                           a.statQuantizedNodes + b.statQuantizedNodes);
       }
 
@@ -266,6 +267,7 @@ namespace embree
       NodeStat<AlignedNodeMB> statAlignedNodesMB;
       NodeStat<AlignedNodeMB4D> statAlignedNodesMB4D;
       NodeStat<UnalignedNodeMB> statUnalignedNodesMB;
+      NodeStat<TransformNode> statTransformNodes;
       NodeStat<QuantizedNode> statQuantizedNodes;
     };
 

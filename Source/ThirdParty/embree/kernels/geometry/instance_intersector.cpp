@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -16,355 +16,81 @@
 
 #include "instance_intersector.h"
 #include "../common/scene.h"
-#include "../common/instance_stack.h"
 
 namespace embree
 {
   namespace isa
   {
-
-    /* Push an instance to the stack. */
-    RTC_FORCEINLINE bool pushInstance(RTCPointQueryContext* context,
-                      unsigned int instanceId,
-                      AffineSpace3fa const& w2i,
-                      AffineSpace3fa const& i2w)
-    {
-      assert(context);
-      const size_t stackSize = context->instStackSize;
-      assert(stackSize < RTC_MAX_INSTANCE_LEVEL_COUNT); 
-      context->instID[stackSize] = instanceId;
-
-      AffineSpace3fa_store_unaligned(w2i,(AffineSpace3fa*)context->world2inst[stackSize]);
-      AffineSpace3fa_store_unaligned(i2w,(AffineSpace3fa*)context->inst2world[stackSize]);
-
-      if (unlikely(stackSize > 0))
-      {
-        const AffineSpace3fa world2inst = AffineSpace3fa_load_unaligned((AffineSpace3fa*)context->world2inst[stackSize  ]) 
-                                        * AffineSpace3fa_load_unaligned((AffineSpace3fa*)context->world2inst[stackSize-1]);
-        const AffineSpace3fa inst2world = AffineSpace3fa_load_unaligned((AffineSpace3fa*)context->inst2world[stackSize-1]) 
-                                        * AffineSpace3fa_load_unaligned((AffineSpace3fa*)context->inst2world[stackSize  ]);
-        AffineSpace3fa_store_unaligned(world2inst,(AffineSpace3fa*)context->world2inst[stackSize]);
-        AffineSpace3fa_store_unaligned(inst2world,(AffineSpace3fa*)context->inst2world[stackSize]);
-      }
-      context->instStackSize++;
-      return true;
-    }
-
-    /* Pop the last instance pushed to the stack. Do not call on an empty stack. */
-    RTC_FORCEINLINE void popInstance(RTCPointQueryContext* context)
-    {
-      assert(context && context->instStackSize > 0);
-      context->instID[--context->instStackSize] = RTC_INVALID_GEOMETRY_ID;
-    }
-
-    void InstanceIntersector1::intersect(const Precalculations& pre, RayHit& ray, IntersectContext* context, const InstancePrimitive& prim)
-    {
-      const Instance* instance = prim.instance;
-      
-      /* perform ray mask test */
-#if defined(EMBREE_RAY_MASK)
-      if ((ray.mask & instance->mask) == 0) 
-        return;
-#endif
-
-      RTCIntersectContext* user_context = context->user;
-      if (likely(instance_id_stack::push(user_context, instance->geomID)))
-      {
-        const AffineSpace3fa world2local = instance->getWorld2Local();
-        const Vec3fa ray_org = ray.org;
-        const Vec3fa ray_dir = ray.dir;
-        ray.org = Vec3fa(xfmPoint(world2local, ray_org), ray.tnear());
-        ray.dir = Vec3fa(xfmVector(world2local, ray_dir), ray.time());
-        IntersectContext newcontext((Scene*)instance->object, user_context);
-        instance->object->intersectors.intersect((RTCRayHit&)ray, &newcontext);
-        ray.org = ray_org;
-        ray.dir = ray_dir;
-        instance_id_stack::pop(user_context);
-      }
-    }
-    
-    bool InstanceIntersector1::occluded(const Precalculations& pre, Ray& ray, IntersectContext* context, const InstancePrimitive& prim)
-    {
-      const Instance* instance = prim.instance;
-      
-      /* perform ray mask test */
-#if defined(EMBREE_RAY_MASK)
-      if ((ray.mask & instance->mask) == 0) 
-        return false;
-#endif
-      
-      RTCIntersectContext* user_context = context->user;
-      bool occluded = false;
-      if (likely(instance_id_stack::push(user_context, instance->geomID)))
-      {
-        const AffineSpace3fa world2local = instance->getWorld2Local();
-        const Vec3fa ray_org = ray.org;
-        const Vec3fa ray_dir = ray.dir;
-        ray.org = Vec3fa(xfmPoint(world2local, ray_org), ray.tnear());
-        ray.dir = Vec3fa(xfmVector(world2local, ray_dir), ray.time());
-        IntersectContext newcontext((Scene*)instance->object, user_context);
-        instance->object->intersectors.occluded((RTCRay&)ray, &newcontext);
-        ray.org = ray_org;
-        ray.dir = ray_dir;
-        occluded = ray.tfar < 0.0f;
-        instance_id_stack::pop(user_context);
-      }
-      return occluded;
-    }
-    
-    bool InstanceIntersector1::pointQuery(PointQuery* query, PointQueryContext* context, const InstancePrimitive& prim)
-    {
-      const Instance* instance = prim.instance;
-
-      const AffineSpace3fa local2world = instance->getLocal2World();
-      const AffineSpace3fa world2local = instance->getWorld2Local();
-      float similarityScale = 0.f;
-      const bool similtude = context->query_type == POINT_QUERY_TYPE_SPHERE
-                           && similarityTransform(world2local, &similarityScale);
-      assert((similtude && similarityScale > 0) || !similtude);
-
-      if (likely(pushInstance(context->userContext, instance->geomID, world2local, local2world)))
-      {
-        PointQuery query_inst;
-        query_inst.time = query->time;
-        query_inst.p = xfmPoint(world2local, query->p); 
-        query_inst.radius = query->radius * similarityScale;
+    template<int K>
+    __forceinline void intersectObject(vint<K>* valid, Scene* object, IntersectContext* context, RayK<K>& ray);
+    template<int K>
+    __forceinline void occludedObject(vint<K>* valid, Scene* object, IntersectContext* context, RayK<K>& ray);
         
-        PointQueryContext context_inst(
-          (Scene*)instance->object, 
-          context->query_ws, 
-          similtude ? POINT_QUERY_TYPE_SPHERE : POINT_QUERY_TYPE_AABB,
-          context->func, 
-          context->userContext,
-          similarityScale,
-          context->userPtr); 
-
-        bool changed = instance->object->intersectors.pointQuery(&query_inst, &context_inst);
-        popInstance(context->userContext);
-        return changed;
-      }
-      return false;
-    }
-
-    void InstanceIntersector1MB::intersect(const Precalculations& pre, RayHit& ray, IntersectContext* context, const InstancePrimitive& prim)
-    {
-      const Instance* instance = prim.instance;
-      
-      /* perform ray mask test */
-#if defined(EMBREE_RAY_MASK)
-      if ((ray.mask & instance->mask) == 0) 
-        return;
+#if defined (__SSE__)
+    template<> __forceinline void intersectObject<4>(vint4* valid, Scene* object, IntersectContext* context, Ray4& ray) { object->intersect4(valid,(RTCRay4&)ray,context); }
+    template<> __forceinline void occludedObject <4>(vint4* valid, Scene* object, IntersectContext* context, Ray4& ray) { object->occluded4 (valid,(RTCRay4&)ray,context); }
 #endif
-      
-      RTCIntersectContext* user_context = context->user;
-      if (likely(instance_id_stack::push(user_context, instance->geomID)))
-      {
-        const AffineSpace3fa world2local = instance->getWorld2Local(ray.time());
-        const Vec3fa ray_org = ray.org;
-        const Vec3fa ray_dir = ray.dir;
-        ray.org = Vec3fa(xfmPoint(world2local, ray_org), ray.tnear());
-        ray.dir = Vec3fa(xfmVector(world2local, ray_dir), ray.time());
-        IntersectContext newcontext((Scene*)instance->object, user_context);
-        instance->object->intersectors.intersect((RTCRayHit&)ray, &newcontext);
-        ray.org = ray_org;
-        ray.dir = ray_dir;
-        instance_id_stack::pop(user_context);
-      }
-    }
-    
-    bool InstanceIntersector1MB::occluded(const Precalculations& pre, Ray& ray, IntersectContext* context, const InstancePrimitive& prim)
-    {
-      const Instance* instance = prim.instance;
-      
-      /* perform ray mask test */
-#if defined(EMBREE_RAY_MASK)
-      if ((ray.mask & instance->mask) == 0) 
-        return false;
+#if defined (__AVX__)
+    template<> __forceinline void intersectObject<8>(vint8* valid, Scene* object, IntersectContext* context, Ray8& ray) { object->intersect8(valid,(RTCRay8&)ray,context); }
+    template<> __forceinline void occludedObject <8>(vint8* valid, Scene* object, IntersectContext* context, Ray8& ray) { object->occluded8 (valid,(RTCRay8&)ray,context); }
 #endif
-      
-      RTCIntersectContext* user_context = context->user;
-      bool occluded = false;
-      if (likely(instance_id_stack::push(user_context, instance->geomID)))
-      {
-        const AffineSpace3fa world2local = instance->getWorld2Local(ray.time());
-        const Vec3fa ray_org = ray.org;
-        const Vec3fa ray_dir = ray.dir;
-        ray.org = Vec3fa(xfmPoint(world2local, ray_org), ray.tnear());
-        ray.dir = Vec3fa(xfmVector(world2local, ray_dir), ray.time());
-        IntersectContext newcontext((Scene*)instance->object, user_context);
-        instance->object->intersectors.occluded((RTCRay&)ray, &newcontext);
-        ray.org = ray_org;
-        ray.dir = ray_dir;
-        occluded = ray.tfar < 0.0f;
-        instance_id_stack::pop(user_context);      
-      }
-      return occluded;
-    }
-    
-    bool InstanceIntersector1MB::pointQuery(PointQuery* query, PointQueryContext* context, const InstancePrimitive& prim)
-    {
-      const Instance* instance = prim.instance;
+#if defined (__AVX512F__)
+    template<> __forceinline void intersectObject<16>(vint16* valid, Scene* object, IntersectContext* context, Ray16& ray) { object->intersect16(valid,(RTCRay16&)ray,context); }
+    template<> __forceinline void occludedObject <16>(vint16* valid, Scene* object, IntersectContext* context, Ray16& ray) { object->occluded16 (valid,(RTCRay16&)ray,context); }
+#endif
 
-      const AffineSpace3fa local2world = instance->getLocal2World(query->time);
-      const AffineSpace3fa world2local = instance->getWorld2Local(query->time);
-      float similarityScale = 0.f;
-      const bool similtude = context->query_type == POINT_QUERY_TYPE_SPHERE
-                           && similarityTransform(world2local, &similarityScale);
+    template<int K>
+    void FastInstanceIntersectorK<K>::intersect(vint<K>* validi, const Instance* instance, RayK<K>& ray, size_t item)
+    { 
+      AffineSpace3vf<K> world2local;
+      const vbool<K> valid = *validi == vint<K>(-1);
+      if (likely(instance->numTimeSteps == 1)) world2local = instance->getWorld2Local();
+      else                                     world2local = instance->getWorld2Local<K>(valid,ray.time);
 
-      if (likely(pushInstance(context->userContext, instance->geomID, world2local, local2world)))
-      {
-        PointQuery query_inst;
-        query_inst.time = query->time;
-        query_inst.p = xfmPoint(world2local, query->p); 
-        query_inst.radius = query->radius * similarityScale;
-        
-        PointQueryContext context_inst(
-          (Scene*)instance->object, 
-          context->query_ws, 
-          similtude ? POINT_QUERY_TYPE_SPHERE : POINT_QUERY_TYPE_AABB,
-          context->func, 
-          context->userContext,
-          similarityScale,
-          context->userPtr); 
-
-        bool changed = instance->object->intersectors.pointQuery(&query_inst, &context_inst);
-        popInstance(context->userContext);
-        return changed;
-      }
-      return false;
+      const Vec3vf<K> ray_org = ray.org;
+      const Vec3vf<K> ray_dir = ray.dir;
+      const vint<K> ray_geomID = ray.geomID;
+      const vint<K> ray_instID = ray.instID;
+      ray.org = xfmPoint (world2local,ray_org);
+      ray.dir = xfmVector(world2local,ray_dir);
+      ray.geomID = RTC_INVALID_GEOMETRY_ID;
+      ray.instID = instance->geomID;
+      IntersectContext context(instance->object,nullptr); 
+      intersectObject(validi,instance->object,&context,ray);
+      ray.org = ray_org;
+      ray.dir = ray_dir;
+      vbool<K> nohit = ray.geomID == vint<K>(RTC_INVALID_GEOMETRY_ID);
+      ray.geomID = select(nohit,ray_geomID,ray.geomID);
+      ray.instID = select(nohit,ray_instID,ray.instID);
     }
     
     template<int K>
-    void InstanceIntersectorK<K>::intersect(const vbool<K>& valid_i, const Precalculations& pre, RayHitK<K>& ray, IntersectContext* context, const InstancePrimitive& prim)
+    void FastInstanceIntersectorK<K>::occluded(vint<K>* validi, const Instance* instance, RayK<K>& ray, size_t item)
     {
-      vbool<K> valid = valid_i;
-      const Instance* instance = prim.instance;
-      
-      /* perform ray mask test */
-#if defined(EMBREE_RAY_MASK)
-      valid &= (ray.mask & instance->mask) != 0;
-      if (none(valid)) return;
-#endif
-        
-      RTCIntersectContext* user_context = context->user;
-      if (likely(instance_id_stack::push(user_context, instance->geomID)))
-      {
-        AffineSpace3vf<K> world2local = instance->getWorld2Local();
-        const Vec3vf<K> ray_org = ray.org;
-        const Vec3vf<K> ray_dir = ray.dir;
-        ray.org = xfmPoint(world2local, ray_org);
-        ray.dir = xfmVector(world2local, ray_dir);
-        IntersectContext newcontext((Scene*)instance->object, user_context);
-        instance->object->intersectors.intersect(valid, ray, &newcontext);
-        ray.org = ray_org;
-        ray.dir = ray_dir;
-        instance_id_stack::pop(user_context);
-      }
+      AffineSpace3vf<K> world2local;
+      const vbool<K> valid = *validi == vint<K>(-1);
+      if (likely(instance->numTimeSteps == 1)) world2local = instance->getWorld2Local();
+      else                                     world2local = instance->getWorld2Local<K>(valid,ray.time);
+
+      const Vec3vf<K> ray_org = ray.org;
+      const Vec3vf<K> ray_dir = ray.dir;
+      ray.org = xfmPoint (world2local,ray_org);
+      ray.dir = xfmVector(world2local,ray_dir);
+      ray.instID = instance->geomID;
+      IntersectContext context(instance->object,nullptr);
+      occludedObject(validi,instance->object,&context,ray);
+      ray.org = ray_org;
+      ray.dir = ray_dir;
     }
 
-    template<int K>
-    vbool<K> InstanceIntersectorK<K>::occluded(const vbool<K>& valid_i, const Precalculations& pre, RayK<K>& ray, IntersectContext* context, const InstancePrimitive& prim)
-    {
-      vbool<K> valid = valid_i;
-      const Instance* instance = prim.instance;
-      
-      /* perform ray mask test */
-#if defined(EMBREE_RAY_MASK)
-      valid &= (ray.mask & instance->mask) != 0;
-      if (none(valid)) return false;
-#endif
-        
-      RTCIntersectContext* user_context = context->user;
-      vbool<K> occluded = false;
-      if (likely(instance_id_stack::push(user_context, instance->geomID)))
-      {
-        AffineSpace3vf<K> world2local = instance->getWorld2Local();
-        const Vec3vf<K> ray_org = ray.org;
-        const Vec3vf<K> ray_dir = ray.dir;
-        ray.org = xfmPoint(world2local, ray_org);
-        ray.dir = xfmVector(world2local, ray_dir);
-        IntersectContext newcontext((Scene*)instance->object, user_context);
-        instance->object->intersectors.occluded(valid, ray, &newcontext);
-        ray.org = ray_org;
-        ray.dir = ray_dir;
-        occluded = ray.tfar < 0.0f;
-        instance_id_stack::pop(user_context);
-      }
-      return occluded;    
-    }
-    
-    template<int K>
-    void InstanceIntersectorKMB<K>::intersect(const vbool<K>& valid_i, const Precalculations& pre, RayHitK<K>& ray, IntersectContext* context, const InstancePrimitive& prim)
-    {
-      vbool<K> valid = valid_i;
-      const Instance* instance = prim.instance;
-      
-      /* perform ray mask test */
-#if defined(EMBREE_RAY_MASK)
-      valid &= (ray.mask & instance->mask) != 0;
-      if (none(valid)) return;
-#endif
-        
-      RTCIntersectContext* user_context = context->user;
-      if (likely(instance_id_stack::push(user_context, instance->geomID)))
-      {
-        AffineSpace3vf<K> world2local = instance->getWorld2Local<K>(valid, ray.time());
-        const Vec3vf<K> ray_org = ray.org;
-        const Vec3vf<K> ray_dir = ray.dir;
-        ray.org = xfmPoint(world2local, ray_org);
-        ray.dir = xfmVector(world2local, ray_dir);
-        IntersectContext newcontext((Scene*)instance->object, user_context);
-        instance->object->intersectors.intersect(valid, ray, &newcontext);
-        ray.org = ray_org;
-        ray.dir = ray_dir;
-        instance_id_stack::pop(user_context);
-      }
-    }
+    DEFINE_SET_INTERSECTOR4(InstanceIntersector4,FastInstanceIntersector4);
 
-    template<int K>
-    vbool<K> InstanceIntersectorKMB<K>::occluded(const vbool<K>& valid_i, const Precalculations& pre, RayK<K>& ray, IntersectContext* context, const InstancePrimitive& prim)
-    {
-      vbool<K> valid = valid_i;
-      const Instance* instance = prim.instance;
-      
-      /* perform ray mask test */
-#if defined(EMBREE_RAY_MASK)
-      valid &= (ray.mask & instance->mask) != 0;
-      if (none(valid)) return false;
-#endif
-        
-      RTCIntersectContext* user_context = context->user;
-      vbool<K> occluded = false;
-      if (likely(instance_id_stack::push(user_context, instance->geomID)))
-      {
-        AffineSpace3vf<K> world2local = instance->getWorld2Local<K>(valid, ray.time());
-        const Vec3vf<K> ray_org = ray.org;
-        const Vec3vf<K> ray_dir = ray.dir;
-        ray.org = xfmPoint(world2local, ray_org);
-        ray.dir = xfmVector(world2local, ray_dir);
-        IntersectContext newcontext((Scene*)instance->object, user_context);
-        instance->object->intersectors.occluded(valid, ray, &newcontext);
-        ray.org = ray_org;
-        ray.dir = ray_dir;
-        occluded = ray.tfar < 0.0f;
-        instance_id_stack::pop(user_context);
-      }
-      return occluded;
-    }
-
-#if defined(__SSE__)
-    template struct InstanceIntersectorK<4>;
-    template struct InstanceIntersectorKMB<4>;
-#endif
-    
 #if defined(__AVX__)
-    template struct InstanceIntersectorK<8>;
-    template struct InstanceIntersectorKMB<8>;
+    DEFINE_SET_INTERSECTOR8(InstanceIntersector8,FastInstanceIntersector8);
 #endif
 
 #if defined(__AVX512F__)
-    template struct InstanceIntersectorK<16>;
-    template struct InstanceIntersectorKMB<16>;
+    DEFINE_SET_INTERSECTOR16(InstanceIntersector16,FastInstanceIntersector16);
 #endif
   }
 }

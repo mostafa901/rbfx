@@ -17,40 +17,44 @@
 #cmakedefine EMBREE_RAY_MASK
 #cmakedefine EMBREE_STAT_COUNTERS
 #cmakedefine EMBREE_BACKFACE_CULLING
-#cmakedefine EMBREE_FILTER_FUNCTION
+#cmakedefine EMBREE_INTERSECTION_FILTER
+#cmakedefine EMBREE_INTERSECTION_FILTER_RESTORE
 #cmakedefine EMBREE_RETURN_SUBDIV_NORMAL
 #cmakedefine EMBREE_IGNORE_INVALID_RAYS
-#cmakedefine EMBREE_GEOMETRY_TRIANGLE
-#cmakedefine EMBREE_GEOMETRY_QUAD
-#cmakedefine EMBREE_GEOMETRY_CURVE
-#cmakedefine EMBREE_GEOMETRY_SUBDIVISION
+#cmakedefine EMBREE_GEOMETRY_TRIANGLES
+#cmakedefine EMBREE_GEOMETRY_QUADS
+#cmakedefine EMBREE_GEOMETRY_LINES
+#cmakedefine EMBREE_GEOMETRY_HAIR
+#cmakedefine EMBREE_GEOMETRY_SUBDIV
 #cmakedefine EMBREE_GEOMETRY_USER
-#cmakedefine EMBREE_GEOMETRY_INSTANCE
-#cmakedefine EMBREE_GEOMETRY_GRID
-#cmakedefine EMBREE_GEOMETRY_POINT
 #cmakedefine EMBREE_RAY_PACKETS
+#cmakedefine EMBREE_NATIVE_CURVE_BSPLINE
 
-#define EMBREE_CURVE_SELF_INTERSECTION_AVOIDANCE_FACTOR @EMBREE_CURVE_SELF_INTERSECTION_AVOIDANCE_FACTOR@
-
-#if defined(EMBREE_GEOMETRY_TRIANGLE)
+#if defined(EMBREE_GEOMETRY_TRIANGLES)
   #define IF_ENABLED_TRIS(x) x
 #else
   #define IF_ENABLED_TRIS(x)
 #endif
 
-#if defined(EMBREE_GEOMETRY_QUAD)
+#if defined(EMBREE_GEOMETRY_QUADS)
   #define IF_ENABLED_QUADS(x) x
 #else
   #define IF_ENABLED_QUADS(x)
 #endif
 
-#if defined(EMBREE_GEOMETRY_CURVE) || defined(EMBREE_GEOMETRY_POINT)
-  #define IF_ENABLED_CURVES(x) x
+#if defined(EMBREE_GEOMETRY_LINES)
+  #define IF_ENABLED_LINES(x) x
 #else
-  #define IF_ENABLED_CURVES(x)
+  #define IF_ENABLED_LINES(x)
 #endif
 
-#if defined(EMBREE_GEOMETRY_SUBDIVISION)
+#if defined(EMBREE_GEOMETRY_HAIR)
+  #define IF_ENABLED_HAIR(x) x
+#else
+  #define IF_ENABLED_HAIR(x)
+#endif
+
+#if defined(EMBREE_GEOMETRY_SUBDIV)
   #define IF_ENABLED_SUBDIV(x) x
 #else
   #define IF_ENABLED_SUBDIV(x)
@@ -60,18 +64,6 @@
   #define IF_ENABLED_USER(x) x
 #else
   #define IF_ENABLED_USER(x)
-#endif
-
-#if defined(EMBREE_GEOMETRY_INSTANCE)
-  #define IF_ENABLED_INSTANCE(x) x
-#else
-  #define IF_ENABLED_INSTANCE(x)
-#endif
-
-#if defined(EMBREE_GEOMETRY_GRID)
-  #define IF_ENABLED_GRIDS(x) x
-#else
-  #define IF_ENABLED_GRIDS(x)
 #endif
 
 

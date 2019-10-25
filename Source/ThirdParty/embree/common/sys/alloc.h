@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -22,11 +22,22 @@
 
 namespace embree
 {
+#define ALIGNED_STRUCT                                           \
+  void* operator new(size_t size) { return alignedMalloc(size); }       \
+  void operator delete(void* ptr) { alignedFree(ptr); }      \
+  void* operator new[](size_t size) { return alignedMalloc(size); }  \
+  void operator delete[](void* ptr) { alignedFree(ptr); }
+
 #define ALIGNED_STRUCT_(align)                                           \
   void* operator new(size_t size) { return alignedMalloc(size,align); } \
   void operator delete(void* ptr) { alignedFree(ptr); }                 \
   void* operator new[](size_t size) { return alignedMalloc(size,align); } \
   void operator delete[](void* ptr) { alignedFree(ptr); }
+
+#define ALIGNED_CLASS                                                \
+  public:                                                            \
+    ALIGNED_STRUCT                                                  \
+  private:
 
 #define ALIGNED_CLASS_(align)                                           \
  public:                                                               \
@@ -34,11 +45,11 @@ namespace embree
  private:
   
   /*! aligned allocation */
-  void* alignedMalloc(size_t size, size_t align);
+  void* alignedMalloc(size_t size, size_t align = 64);
   void alignedFree(void* ptr);
   
   /*! allocator that performs aligned allocations */
-  template<typename T, size_t alignment>
+  template<typename T, size_t alignment = 64>
     struct aligned_allocator
     {
       typedef T value_type;
@@ -109,7 +120,7 @@ namespace embree
     };
 
   /*! allocator for IDs */
-  template<typename T, size_t max_id>
+  template<typename T>
     struct IDPool
     {
       typedef T value_type;
@@ -128,11 +139,7 @@ namespace embree
         } 
 
         /* allocate new ID */
-        else
-        {
-          if (size_t(nextID)+1 > max_id)
-            return -1;
-          
+        else {
           return nextID++;
         }
       }
@@ -140,9 +147,6 @@ namespace embree
       /* adds an ID provided by the user */
       bool add(T id)
       {
-        if (id > max_id)
-          return false;
-        
         /* check if ID should be in IDs set */
         if (id < nextID) {
           auto p = IDs.find(id);

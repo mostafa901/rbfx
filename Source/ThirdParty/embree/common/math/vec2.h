@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -20,23 +20,16 @@
 
 namespace embree
 {
-  struct Vec2fa;
-  
   ////////////////////////////////////////////////////////////////////////////////
   /// Generic 2D vector Class
   ////////////////////////////////////////////////////////////////////////////////
 
   template<typename T> struct Vec2
   {
-    enum { N = 2 };
-    union {
-      struct { T x, y; };
-#if !(defined(__WIN32__) && _MSC_VER == 1800) // workaround for older VS 2013 compiler
-      T components[N];
-#endif
-    };
+    T x, y;
 
     typedef T Scalar;
+    enum { N = 2 };
 
     ////////////////////////////////////////////////////////////////////////////////
     /// Construction
@@ -47,12 +40,8 @@ namespace embree
     __forceinline          Vec2( const T& x, const T& y ) : x(x), y(y) {}
 
     __forceinline Vec2( const Vec2& other ) { x = other.x; y = other.y; }
-    __forceinline Vec2( const Vec2fa& other );
-
     template<typename T1> __forceinline Vec2( const Vec2<T1>& a ) : x(T(a.x)), y(T(a.y)) {}
     template<typename T1> __forceinline Vec2& operator =( const Vec2<T1>& other ) { x = other.x; y = other.y; return *this; }
-
-    __forceinline Vec2& operator =( const Vec2& other ) { x = other.x; y = other.y; return *this; }
 
     ////////////////////////////////////////////////////////////////////////////////
     /// Constants
@@ -63,13 +52,8 @@ namespace embree
     __forceinline Vec2( PosInfTy ) : x(pos_inf), y(pos_inf) {}
     __forceinline Vec2( NegInfTy ) : x(neg_inf), y(neg_inf) {}
 
-#if defined(__WIN32__) && _MSC_VER == 1800 // workaround for older VS 2013 compiler
-	__forceinline const T& operator [](const size_t axis) const { assert(axis < 2); return (&x)[axis]; }
-	__forceinline       T& operator [](const size_t axis)       { assert(axis < 2); return (&x)[axis]; }
-#else
-	__forceinline const T& operator [](const size_t axis) const { assert(axis < 2); return components[axis]; }
-	__forceinline       T& operator [](const size_t axis )      { assert(axis < 2); return components[axis]; }
-#endif
+    __forceinline const T& operator []( const size_t axis ) const { assert(axis < 2); return (&x)[axis]; }
+    __forceinline       T& operator []( const size_t axis )       { assert(axis < 2); return (&x)[axis]; }
   };
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -108,15 +92,15 @@ namespace embree
   /// Ternary Operators
   ////////////////////////////////////////////////////////////////////////////////
 
-  template<typename T> __forceinline Vec2<T> madd  ( const Vec2<T>& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>( madd(a.x,b.x,c.x), madd(a.y,b.y,c.y) ); }
-  template<typename T> __forceinline Vec2<T> msub  ( const Vec2<T>& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>( msub(a.x,b.x,c.x), msub(a.y,b.y,c.y) ); }
-  template<typename T> __forceinline Vec2<T> nmadd ( const Vec2<T>& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>(nmadd(a.x,b.x,c.x),nmadd(a.y,b.y,c.y) ); }
-  template<typename T> __forceinline Vec2<T> nmsub ( const Vec2<T>& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>(nmsub(a.x,b.x,c.x),nmsub(a.y,b.y,c.y) ); }
+  template<typename T> __forceinline const Vec2<T> madd  ( const Vec2<T>& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>( madd(a.x,b.x,c.x), madd(a.y,b.y,c.y) ); }
+  template<typename T> __forceinline const Vec2<T> msub  ( const Vec2<T>& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>( msub(a.x,b.x,c.x), msub(a.y,b.y,c.y) ); }
+  template<typename T> __forceinline const Vec2<T> nmadd ( const Vec2<T>& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>(nmadd(a.x,b.x,c.x),nmadd(a.y,b.y,c.y) ); }
+  template<typename T> __forceinline const Vec2<T> nmsub ( const Vec2<T>& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>(nmsub(a.x,b.x,c.x),nmsub(a.y,b.y,c.y) ); }
 
-  template<typename T> __forceinline Vec2<T> madd  ( const T& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>( madd(a,b.x,c.x), madd(a,b.y,c.y) ); }
-  template<typename T> __forceinline Vec2<T> msub  ( const T& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>( msub(a,b.x,c.x), msub(a,b.y,c.y) ); }
-  template<typename T> __forceinline Vec2<T> nmadd ( const T& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>(nmadd(a,b.x,c.x),nmadd(a,b.y,c.y) ); }
-  template<typename T> __forceinline Vec2<T> nmsub ( const T& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>(nmsub(a,b.x,c.x),nmsub(a,b.y,c.y) ); }
+  template<typename T> __forceinline const Vec2<T> madd  ( const T& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>( madd(a,b.x,c.x), madd(a,b.y,c.y) ); }
+  template<typename T> __forceinline const Vec2<T> msub  ( const T& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>( msub(a,b.x,c.x), msub(a,b.y,c.y) ); }
+  template<typename T> __forceinline const Vec2<T> nmadd ( const T& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>(nmadd(a,b.x,c.x),nmadd(a,b.y,c.y) ); }
+  template<typename T> __forceinline const Vec2<T> nmsub ( const T& a, const Vec2<T>& b, const Vec2<T>& c) { return Vec2<T>(nmsub(a,b.x,c.x),nmsub(a,b.y,c.y) ); }
 
   ////////////////////////////////////////////////////////////////////////////////
   /// Assignment Operators
@@ -149,19 +133,11 @@ namespace embree
   }
 
   ////////////////////////////////////////////////////////////////////////////////
-  /// Shift Operators
-  ////////////////////////////////////////////////////////////////////////////////
-
-  template<typename T> __forceinline Vec2<T> shift_right_1( const Vec2<T>& a ) {
-    return Vec2<T>(shift_right_1(a.x),shift_right_1(a.y));
-  }
-  
-  ////////////////////////////////////////////////////////////////////////////////
   /// Euclidian Space Operators
   ////////////////////////////////////////////////////////////////////////////////
 
   template<typename T> __forceinline T       dot      ( const Vec2<T>& a, const Vec2<T>& b ) { return madd(a.x,b.x,a.y*b.y); }
-  template<typename T> __forceinline Vec2<T> cross    ( const Vec2<T>& a )                   { return Vec2<T>(-a.y,a.x); } 
+
   template<typename T> __forceinline T       length   ( const Vec2<T>& a )                   { return sqrt(dot(a,a)); }
   template<typename T> __forceinline Vec2<T> normalize( const Vec2<T>& a )                   { return a*rsqrt(dot(a,a)); }
   template<typename T> __forceinline T       distance ( const Vec2<T>& a, const Vec2<T>& b ) { return length(a-b); }
@@ -187,11 +163,6 @@ namespace embree
     return Vec2<T>(select(s,t.x,f.x),select(s,t.y,f.y));
   }
 
-  template<typename T>
-    __forceinline Vec2<T> lerp(const Vec2<T>& v0, const Vec2<T>& v1, const T& t) {
-    return madd(Vec2<T>(T(1.0f)-t),v0,t*v1);
-  }
-
   template<typename T> __forceinline int maxDim ( const Vec2<T>& a )
   {
     const Vec2<T> b = abs(a);
@@ -214,35 +185,4 @@ namespace embree
   typedef Vec2<bool > Vec2b;
   typedef Vec2<int  > Vec2i;
   typedef Vec2<float> Vec2f;
-}
-
-#include "vec2fa.h"
-
-#if defined __SSE__
-#include "../simd/sse.h"
-#endif
-
-#if defined __AVX__
-#include "../simd/avx.h"
-#endif
-
-#if defined(__AVX512F__)
-#include "../simd/avx512.h"
-#endif
-
-namespace embree
-{
-  template<> __forceinline Vec2<float>::Vec2(const Vec2fa& a) : x(a.x), y(a.y) {}
-
-#if defined(__SSE__)
-  template<> __forceinline Vec2<vfloat4>::Vec2(const Vec2fa& a) : x(a.x), y(a.y) {}
-#endif
-
-#if defined(__AVX__)
-  template<> __forceinline Vec2<vfloat8>::Vec2(const Vec2fa& a) : x(a.x), y(a.y) {}
-#endif
-
-#if defined(__AVX512F__)
-  template<> __forceinline Vec2<vfloat16>::Vec2(const Vec2fa& a) : x(a.x), y(a.y) {}
-#endif
 }

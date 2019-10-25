@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -20,7 +20,7 @@
 #include "heuristic_spatial_array.h"
 #include "heuristic_openmerge_array.h"
 
-#if defined(__AVX512F__) && !defined(__AVX512VL__) // KNL
+#if defined(__AVX512F__)
 #  define NUM_OBJECT_BINS 16
 #  define NUM_SPATIAL_BINS 16
 #else
@@ -32,13 +32,10 @@ namespace embree
 {
   namespace isa
   {
-    MAYBE_UNUSED static const float travCost = 1.0f;
-    MAYBE_UNUSED static const size_t DEFAULT_SINGLE_THREAD_THRESHOLD = 1024;
-
     struct GeneralBVHBuilder
     {
-      static const size_t MAX_BRANCHING_FACTOR = 8;        //!< maximum supported BVH branching factor
-      static const size_t MIN_LARGE_LEAF_LEVELS = 8;        //!< create balanced tree of we are that many levels before the maximum tree depth
+      static const size_t MAX_BRANCHING_FACTOR = 8;        //!< maximal supported BVH branching factor
+      static const size_t MIN_LARGE_LEAF_LEVELS = 8;        //!< create balanced tree of we are that many levels before the maximal tree depth
 
       /*! settings for SAH builder */
       struct Settings
@@ -49,29 +46,29 @@ namespace embree
           travCost(1.0f), intCost(1.0f), singleThreadThreshold(1024), primrefarrayalloc(inf) {}
 
         /*! initialize settings from API settings */
-        Settings (const RTCBuildArguments& settings)
+        Settings (const RTCBuildSettings& settings)
         : branchingFactor(2), maxDepth(32), logBlockSize(0), minLeafSize(1), maxLeafSize(8),
           travCost(1.0f), intCost(1.0f), singleThreadThreshold(1024), primrefarrayalloc(inf)
         {
-          if (RTC_BUILD_ARGUMENTS_HAS(settings,maxBranchingFactor)) branchingFactor = settings.maxBranchingFactor;
-          if (RTC_BUILD_ARGUMENTS_HAS(settings,maxDepth          )) maxDepth        = settings.maxDepth;
-          if (RTC_BUILD_ARGUMENTS_HAS(settings,sahBlockSize      )) logBlockSize    = bsr(settings.sahBlockSize);
-          if (RTC_BUILD_ARGUMENTS_HAS(settings,minLeafSize       )) minLeafSize     = settings.minLeafSize;
-          if (RTC_BUILD_ARGUMENTS_HAS(settings,maxLeafSize       )) maxLeafSize     = settings.maxLeafSize;
-          if (RTC_BUILD_ARGUMENTS_HAS(settings,traversalCost     )) travCost        = settings.traversalCost;
-          if (RTC_BUILD_ARGUMENTS_HAS(settings,intersectionCost  )) intCost         = settings.intersectionCost;
+          if (RTC_BUILD_SETTINGS_HAS(settings,maxBranchingFactor)) branchingFactor = settings.maxBranchingFactor;
+          if (RTC_BUILD_SETTINGS_HAS(settings,maxDepth          )) maxDepth        = settings.maxDepth;
+          if (RTC_BUILD_SETTINGS_HAS(settings,sahBlockSize      )) logBlockSize    = __bsr(settings.sahBlockSize);
+          if (RTC_BUILD_SETTINGS_HAS(settings,minLeafSize       )) minLeafSize     = settings.minLeafSize;
+          if (RTC_BUILD_SETTINGS_HAS(settings,maxLeafSize       )) maxLeafSize     = settings.maxLeafSize;
+          if (RTC_BUILD_SETTINGS_HAS(settings,travCost          )) travCost        = settings.travCost;
+          if (RTC_BUILD_SETTINGS_HAS(settings,intCost           )) intCost         = settings.intCost;
         }
 
         Settings (size_t sahBlockSize, size_t minLeafSize, size_t maxLeafSize, float travCost, float intCost, size_t singleThreadThreshold, size_t primrefarrayalloc = inf)
-        : branchingFactor(2), maxDepth(32), logBlockSize(bsr(sahBlockSize)), minLeafSize(minLeafSize), maxLeafSize(maxLeafSize),
+        : branchingFactor(2), maxDepth(32), logBlockSize(__bsr(sahBlockSize)), minLeafSize(minLeafSize), maxLeafSize(maxLeafSize),
           travCost(travCost), intCost(intCost), singleThreadThreshold(singleThreadThreshold), primrefarrayalloc(primrefarrayalloc) {}
 
       public:
         size_t branchingFactor;  //!< branching factor of BVH to build
-        size_t maxDepth;         //!< maximum depth of BVH to build
+        size_t maxDepth;         //!< maximal depth of BVH to build
         size_t logBlockSize;     //!< log2 of blocksize for SAH heuristic
-        size_t minLeafSize;      //!< minimum size of a leaf
-        size_t maxLeafSize;      //!< maximum size of a leaf
+        size_t minLeafSize;      //!< minimal size of a leaf
+        size_t maxLeafSize;      //!< maximal size of a leaf
         float travCost;          //!< estimated cost of one traversal step
         float intCost;           //!< estimated cost of one primitive intersection
         size_t singleThreadThreshold; //!< threshold when we switch to single threaded build
@@ -107,7 +104,6 @@ namespace embree
       template<typename BuildRecord,
         typename Heuristic,
         typename Set,
-        typename PrimRef,
         typename ReductionTy,
         typename Allocator,
         typename CreateAllocFunc,
@@ -116,12 +112,11 @@ namespace embree
         typename CreateLeafFunc,
         typename ProgressMonitor>
 
-        class BuilderT
+        class BuilderT : private Settings
         {
           friend struct GeneralBVHBuilder;
 
-          BuilderT (PrimRef* prims,
-                    Heuristic& heuristic,
+          BuilderT (Heuristic& heuristic,
                     const CreateAllocFunc& createAlloc,
                     const CreateNodeFunc& createNode,
                     const UpdateNodeFunc& updateNode,
@@ -129,25 +124,24 @@ namespace embree
                     const ProgressMonitor& progressMonitor,
                     const Settings& settings)
 
-            : cfg(settings),
-            prims(prims),
+            : Settings(settings),
             heuristic(heuristic),
             createAlloc(createAlloc), createNode(createNode), updateNode(updateNode), createLeaf(createLeaf),
             progressMonitor(progressMonitor)
           {
-            if (cfg.branchingFactor > MAX_BRANCHING_FACTOR)
-              throw_RTCError(RTC_ERROR_UNKNOWN,"bvh_builder: branching factor too large");
+            if (branchingFactor > MAX_BRANCHING_FACTOR)
+              throw_RTCError(RTC_UNKNOWN_ERROR,"bvh_builder: branching factor too large");
           }
 
           const ReductionTy createLargeLeaf(const BuildRecord& current, Allocator alloc)
           {
             /* this should never occur but is a fatal error */
-            if (current.depth > cfg.maxDepth)
-              throw_RTCError(RTC_ERROR_UNKNOWN,"depth limit reached");
+            if (current.depth > maxDepth)
+              throw_RTCError(RTC_UNKNOWN_ERROR,"depth limit reached");
 
             /* create leaf for few primitives */
-            if (current.prims.size() <= cfg.maxLeafSize)
-              return createLeaf(prims,current.prims,alloc);
+            if (current.prims.size() <= maxLeafSize)
+              return createLeaf(current.prims,alloc);
 
             /* fill all children by always splitting the largest one */
             ReductionTy values[MAX_BRANCHING_FACTOR];
@@ -162,7 +156,7 @@ namespace embree
               for (size_t i=0; i<numChildren; i++)
               {
                 /* ignore leaves as they cannot get split */
-                if (children[i].prims.size() <= cfg.maxLeafSize)
+                if (children[i].prims.size() <= maxLeafSize)
                   continue;
 
                 /* remember child with largest size */
@@ -184,12 +178,12 @@ namespace embree
               children[numChildren+0] = right;
               numChildren++;
 
-            } while (numChildren < cfg.branchingFactor);
+            } while (numChildren < branchingFactor);
 
             /* set barrier for primrefarrayalloc */
-            if (unlikely(current.size() > cfg.primrefarrayalloc))
+            if (unlikely(current.size() > primrefarrayalloc))
               for (size_t i=0; i<numChildren; i++)
-                children[i].alloc_barrier = children[i].size() <= cfg.primrefarrayalloc;
+                children[i].alloc_barrier = children[i].size() <= primrefarrayalloc;
 
             /* create node */
             auto node = createNode(children,numChildren,alloc);
@@ -209,19 +203,19 @@ namespace embree
               alloc = createAlloc();
 
             /* call memory monitor function to signal progress */
-            if (toplevel && current.size() <= cfg.singleThreadThreshold)
+            if (toplevel && current.size() <= singleThreadThreshold)
               progressMonitor(current.size());
 
             /*! find best split */
-            auto split = heuristic.find(current.prims,cfg.logBlockSize);
+            auto split = heuristic.find(current.prims,logBlockSize);
 
             /*! compute leaf and split cost */
-            const float leafSAH  = cfg.intCost*current.prims.leafSAH(cfg.logBlockSize);
-            const float splitSAH = cfg.travCost*halfArea(current.prims.geomBounds)+cfg.intCost*split.splitSAH();
+            const float leafSAH  = intCost*current.prims.leafSAH(logBlockSize);
+            const float splitSAH = travCost*halfArea(current.prims.geomBounds)+intCost*split.splitSAH();
             assert((current.prims.size() == 0) || ((leafSAH >= 0) && (splitSAH >= 0)));
 
             /*! create a leaf node when threshold reached or SAH tells us to stop */
-            if (current.prims.size() <= cfg.minLeafSize || current.depth+MIN_LARGE_LEAF_LEVELS >= cfg.maxDepth || (current.prims.size() <= cfg.maxLeafSize && leafSAH <= splitSAH)) {
+            if (current.prims.size() <= minLeafSize || current.depth+MIN_LARGE_LEAF_LEVELS >= maxDepth || (current.prims.size() <= maxLeafSize && leafSAH <= splitSAH)) {
               heuristic.deterministic_order(current.prims);
               return createLargeLeaf(current,alloc);
             }
@@ -238,7 +232,7 @@ namespace embree
             size_t numChildren = 2;
 
             /*! split until node is full or SAH tells us to stop */
-            while (numChildren < cfg.branchingFactor)
+            while (numChildren < branchingFactor)
             {
               /*! find best child to split */
               float bestArea = neg_inf;
@@ -246,7 +240,7 @@ namespace embree
               for (size_t i=0; i<numChildren; i++)
               {
                 /* ignore leaves as they cannot get split */
-                if (children[i].prims.size() <= cfg.minLeafSize) continue;
+                if (children[i].prims.size() <= minLeafSize) continue;
 
                 /* find child with largest surface area */
                 if (halfArea(children[i].prims.geomBounds) > bestArea) {
@@ -260,7 +254,7 @@ namespace embree
               BuildRecord& brecord = children[bestChild];
               BuildRecord lrecord(current.depth+1);
               BuildRecord rrecord(current.depth+1);
-              auto split = heuristic.find(brecord.prims,cfg.logBlockSize);
+              auto split = heuristic.find(brecord.prims,logBlockSize);
               heuristic.split(split,brecord.prims,lrecord.prims,rrecord.prims);
               children[bestChild  ] = lrecord;
               children[numChildren] = rrecord;
@@ -268,9 +262,9 @@ namespace embree
             }
 
             /* set barrier for primrefarrayalloc */
-            if (unlikely(current.size() > cfg.primrefarrayalloc))
+            if (unlikely(current.size() > primrefarrayalloc))
               for (size_t i=0; i<numChildren; i++)
-                children[i].alloc_barrier = children[i].size() <= cfg.primrefarrayalloc;
+                children[i].alloc_barrier = children[i].size() <= primrefarrayalloc;
 
             /* sort buildrecords for faster shadow ray traversal */
             std::sort(&children[0],&children[numChildren],std::greater<BuildRecord>());
@@ -279,7 +273,7 @@ namespace embree
             auto node = createNode(children,numChildren,alloc);
 
             /* spawn tasks */
-            if (current.size() > cfg.singleThreadThreshold)
+            if (current.size() > singleThreadThreshold)
             {
               /*! parallel_for is faster than spawing sub-tasks */
               parallel_for(size_t(0), numChildren, [&] (const range<size_t>& r) { // FIXME: no range here
@@ -302,8 +296,6 @@ namespace embree
           }
 
         private:
-          Settings cfg;
-          PrimRef* prims;
           Heuristic& heuristic;
           const CreateAllocFunc& createAlloc;
           const CreateNodeFunc& createNode;
@@ -316,7 +308,6 @@ namespace embree
       typename ReductionTy,
         typename Heuristic,
         typename Set,
-        typename PrimRef,
         typename CreateAllocFunc,
         typename CreateNodeFunc,
         typename UpdateNodeFunc,
@@ -324,7 +315,6 @@ namespace embree
         typename ProgressMonitor>
 
         __noinline static ReductionTy build(Heuristic& heuristic,
-                                            PrimRef* prims,
                                  const Set& set,
                                  CreateAllocFunc createAlloc,
                                  CreateNodeFunc createNode, UpdateNodeFunc updateNode,
@@ -338,7 +328,6 @@ namespace embree
           BuildRecord,
           Heuristic,
           Set,
-          PrimRef,
           ReductionTy,
           decltype(createAlloc()),
           CreateAllocFunc,
@@ -348,8 +337,7 @@ namespace embree
           ProgressMonitor> Builder;
 
         /* instantiate builder */
-        Builder builder(prims,
-                        heuristic,
+        Builder builder(heuristic,
                         createAlloc,
                         createNode,
                         updateNode,
@@ -390,10 +378,9 @@ namespace embree
                                  const Settings& settings)
       {
         Heuristic heuristic(prims);
-        return GeneralBVHBuilder::build<ReductionTy,Heuristic,Set,PrimRef>(
+        return GeneralBVHBuilder::build<ReductionTy,Heuristic,Set>(
           heuristic,
-          prims,
-          PrimInfoRange(0,pinfo.size(),pinfo),
+          PrimInfoRange(0,pinfo.size(),pinfo.geomBounds,pinfo.centBounds),
           createAlloc,
           createNode,
           updateNode,
@@ -411,26 +398,27 @@ namespace embree
       typedef GeneralBVHBuilder::BuildRecordT<Set,Split> BuildRecord;
       typedef GeneralBVHBuilder::Settings Settings;
 
-      static const unsigned int GEOMID_MASK = 0xFFFFFFFF >>     RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS;
-      static const unsigned int SPLITS_MASK = 0xFFFFFFFF << (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS);
+      static const unsigned GEOMID_MASK = 0x00FFFFFF;
+      static const unsigned SPLITS_MASK = 0xFF000000;
 
       template<typename ReductionTy, typename UserCreateLeaf>
       struct CreateLeafExt
       {
-        __forceinline CreateLeafExt (const UserCreateLeaf userCreateLeaf)
-          : userCreateLeaf(userCreateLeaf) {}
+        __forceinline CreateLeafExt (const UserCreateLeaf userCreateLeaf, PrimRef* prims)
+          : userCreateLeaf(userCreateLeaf), prims(prims) {}
 
         // __noinline is workaround for ICC2016 compiler bug
         template<typename Allocator>
-        __noinline ReductionTy operator() (PrimRef* prims, const range<size_t>& range, Allocator alloc) const
+        __noinline ReductionTy operator() (const range<size_t>& range, Allocator alloc) const
         {
           for (size_t i=range.begin(); i<range.end(); i++)
-            prims[i].lower.u &= GEOMID_MASK;
+            prims[i].lower.a &= GEOMID_MASK;
 
-          return userCreateLeaf(prims,range,alloc);
+          return userCreateLeaf(range,alloc);
         }
 
         const UserCreateLeaf userCreateLeaf;
+        PrimRef* prims;
       };
 
       /*! special builder that propagates reduction over the tree */
@@ -469,33 +457,29 @@ namespace embree
               return A;
             },std::plus<double>());
 
-
-          /* calculate maximum number of spatial splits per primitive */
-          const unsigned int maxSplits = ((size_t)1 << RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS)-1;
+          /* calculate maximal number of spatial splits per primitive */
           const float f = 10.0f;
-
           const float invA = 1.0f / A;
           parallel_for( size_t(0), pinfo.size(), [&](const range<size_t>& r) {
 
               for (size_t i=r.begin(); i<r.end(); i++)
               {
                 PrimRef& prim = prims[i];
-                assert((prim.geomID() & SPLITS_MASK) == 0);
-                // FIXME: is there a better general heuristic ?
+                assert((prim.lower.a & 0xFF000000) == 0);
                 const float nf = ceilf(f*pinfo.size()*area(prim.bounds()) * invA);
-                unsigned int n = 4+min((int)maxSplits-4, max(1, (int)(nf)));
-                prim.lower.u |= n << (32-RESERVED_NUM_SPATIAL_SPLITS_GEOMID_BITS);
+                // FIXME: is there a better general heuristic ?
+                size_t n = 4+min(ssize_t(127-4), max(ssize_t(1), ssize_t(nf)));
+                prim.lower.a |= n << 24;
               }
             });
 
-          return GeneralBVHBuilder::build<ReductionTy,Heuristic,Set,PrimRef>(
+          return GeneralBVHBuilder::build<ReductionTy,Heuristic,Set>(
             heuristic,
-            prims,
-            PrimInfoExtRange(0,pinfo.size(),extSize,pinfo),
+            PrimInfoExtRange(0,pinfo.size(),extSize,pinfo.geomBounds,pinfo.centBounds),
             createAlloc,
             createNode,
             updateNode,
-            CreateLeafExt<ReductionTy,CreateLeafFunc>(createLeaf),
+            CreateLeafExt<ReductionTy,CreateLeafFunc>(createLeaf,prims),
             progressMonitor,
             settings);
         }
@@ -535,10 +519,9 @@ namespace embree
         typedef HeuristicArrayOpenMergeSAH<NodeOpenerFunc,BuildRef,NUM_OBJECT_BINS_HQ> Heuristic;
         Heuristic heuristic(nodeOpenerFunc,prims,settings.branchingFactor);
 
-        return GeneralBVHBuilder::build<ReductionTy,Heuristic,Set,BuildRef>(
+        return GeneralBVHBuilder::build<ReductionTy,Heuristic,Set>(
           heuristic,
-          prims,
-          PrimInfoExtRange(0,pinfo.size(),extSize,pinfo),
+          PrimInfoExtRange(0,pinfo.size(),extSize,pinfo.geomBounds,pinfo.centBounds),
           createAlloc,
           createNode,
           updateNode,

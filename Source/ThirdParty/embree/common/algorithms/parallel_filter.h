@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -39,7 +39,7 @@ namespace embree
       return sequential_filter(data,begin,end,predicate);
 
     /* calculate number of tasks to use */
-    enum { MAX_TASKS = 64 };
+    enum { MAX_TASKS = 512 };
     const Index numThreads = TaskScheduler::threadCount();
     const Index numBlocks  = (end-begin+minStepSize-1)/minStepSize;
     const Index taskCount  = min(numThreads,numBlocks,(Index)MAX_TASKS);
@@ -76,8 +76,8 @@ namespace embree
     parallel_for(taskCount, [&](const Index taskIndex)
     {
       /* destination to write elements to */
-      Index dst = begin+(taskIndex+0)*(end-begin)/taskCount+nused[taskIndex];
-      Index dst_end = min(dst+nfree[taskIndex],begin+sused);
+      Index dst = (taskIndex+0)*(end-begin)/taskCount+nused[taskIndex];
+      Index dst_end = min(dst+nfree[taskIndex],sused);
       if (dst_end <= dst) return;
 
       /* range of misplaced elements to copy to destination */
@@ -92,10 +92,7 @@ namespace embree
         Index k1 = k0+nused[i];
         Index src = begin+(i+0)*(end-begin)/taskCount+nused[i];
         for (Index i=max(r0,k0); i<min(r1,k1); i++) {
-          Index isrc = src-i+k0-1;
-          assert(dst >= begin && dst < end);
-          assert(isrc >= begin && isrc < end);
-          data[dst++] = data[isrc];
+          data[dst++] = data[src-i+k0-1];
         }
         k0 = k1;
       }

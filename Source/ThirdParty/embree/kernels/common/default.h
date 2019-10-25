@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -16,49 +16,45 @@
 
 #pragma once
 
-#include "../../common/sys/platform.h"
-#include "../../common/sys/sysinfo.h"
-#include "../../common/sys/thread.h"
-#include "../../common/sys/alloc.h"
-#include "../../common/sys/ref.h"
-#include "../../common/sys/intrinsics.h"
-#include "../../common/sys/atomic.h"
-#include "../../common/sys/mutex.h"
-#include "../../common/sys/vector.h"
-#include "../../common/sys/array.h"
-#include "../../common/sys/string.h"
-#include "../../common/sys/regression.h"
-#include "../../common/sys/vector.h"
+#include "../common/sys/platform.h"
+#include "../common/sys/sysinfo.h"
+#include "../common/sys/thread.h"
+#include "../common/sys/alloc.h"
+#include "../common/sys/ref.h"
+#include "../common/sys/intrinsics.h"
+#include "../common/sys/atomic.h"
+#include "../common/sys/mutex.h"
+#include "../common/sys/vector.h"
+#include "../common/sys/array.h"
+#include "../common/sys/string.h"
+#include "../common/sys/regression.h"
+#include "../common/sys/vector.h"
 
-#include "../../common/math/math.h"
-#include "../../common/simd/simd.h"
-#include "../../common/math/vec2.h"
-#include "../../common/math/vec3.h"
-#include "../../common/math/vec4.h"
-#include "../../common/math/vec2fa.h"
-#include "../../common/math/vec3fa.h"
-#include "../../common/math/interval.h"
-#include "../../common/math/bbox.h"
-#include "../../common/math/obbox.h"
-#include "../../common/math/lbbox.h"
-#include "../../common/math/linearspace2.h"
-#include "../../common/math/linearspace3.h"
-#include "../../common/math/affinespace.h"
-#include "../../common/math/range.h"
-#include "../../common/lexers/tokenstream.h"
+#include "../common/math/math.h"
+#include "../common/simd/simd.h"
+#include "../common/math/vec2.h"
+#include "../common/math/vec3.h"
+#include "../common/math/vec4.h"
+#include "../common/math/bbox.h"
+#include "../common/math/obbox.h"
+#include "../common/math/lbbox.h"
+#include "../common/math/linearspace2.h"
+#include "../common/math/linearspace3.h"
+#include "../common/math/affinespace.h"
+#include "../common/math/range.h"
+#include "../common/lexers/tokenstream.h"
 
-#include "../../common/tasking/taskscheduler.h"
+#include "../common/tasking/taskscheduler.h"
 
 #define COMMA ,
 
-#include "../config.h"
+#include "config.h"
 #include "isa.h"
 #include "stat.h"
 #include "profile.h"
 #include "rtcore.h"
 #include "vector.h"
 #include "state.h"
-#include "instance_stack.h"
 
 #include <vector>
 #include <map>
@@ -234,56 +230,4 @@ namespace embree
   typedef BBox<Vec3vf4>  BBox3vf4;
   typedef BBox<Vec3vf8>  BBox3vf8;
   typedef BBox<Vec3vf16> BBox3vf16;
-
-
-  /* calculate time segment itime and fractional time ftime */
-  __forceinline int getTimeSegment(float time, float numTimeSegments, float& ftime)
-  {
-    const float timeScaled = time * numTimeSegments;
-    const float itimef = clamp(floorf(timeScaled), 0.0f, numTimeSegments-1.0f);
-    ftime = timeScaled - itimef;
-    return int(itimef);
-  }
-
-  __forceinline int getTimeSegment(float time, float start_time, float end_time, float numTimeSegments, float& ftime)
-  {
-    const float timeScaled = (time-start_time)/(end_time-start_time) * numTimeSegments;
-    const float itimef = clamp(floorf(timeScaled), 0.0f, numTimeSegments-1.0f);
-    ftime = timeScaled - itimef;
-    return int(itimef);
-  }
-
-  template<int N>
-  __forceinline vint<N> getTimeSegment(const vfloat<N>& time, const vfloat<N>& numTimeSegments, vfloat<N>& ftime)
-  {
-    const vfloat<N> timeScaled = time * numTimeSegments;
-    const vfloat<N> itimef = clamp(floor(timeScaled), vfloat<N>(zero), numTimeSegments-1.0f);
-    ftime = timeScaled - itimef;
-    return vint<N>(itimef);
-  }
-
-  template<int N>
-    __forceinline vint<N> getTimeSegment(const vfloat<N>& time, const vfloat<N>& start_time, const vfloat<N>& end_time, const vfloat<N>& numTimeSegments, vfloat<N>& ftime)
-  {
-    const vfloat<N> timeScaled = (time-start_time)/(end_time-start_time) * numTimeSegments;
-    const vfloat<N> itimef = clamp(floor(timeScaled), vfloat<N>(zero), numTimeSegments-1.0f);
-    ftime = timeScaled - itimef;
-    return vint<N>(itimef);
-  }
-
-  /* calculate overlapping time segment range */
-  __forceinline range<int> getTimeSegmentRange(const BBox1f& time_range, float numTimeSegments)
-  {
-    const int itime_lower = (int)max(floor(time_range.lower*numTimeSegments), 0.0f);
-    const int itime_upper = (int)min(ceil (time_range.upper*numTimeSegments), numTimeSegments);
-    return make_range(itime_lower, itime_upper);
-  }
-
-  /* calculate overlapping time segment range */
-  __forceinline range<int> getTimeSegmentRange(const BBox1f& range, BBox1f time_range, float numTimeSegments)
-  {
-    const float lower = (range.lower-time_range.lower)/time_range.size();
-    const float upper = (range.upper-time_range.lower)/time_range.size();
-    return getTimeSegmentRange(BBox1f(lower,upper),numTimeSegments);
-  }
 }

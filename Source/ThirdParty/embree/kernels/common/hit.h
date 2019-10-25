@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -17,8 +17,6 @@
 #pragma once
 
 #include "default.h"
-#include "ray.h"
-#include "instance_stack.h"
 
 namespace embree
 {
@@ -30,24 +28,20 @@ namespace embree
     __forceinline HitK() {}
 
     /* Constructs a hit */
-    __forceinline HitK(const RTCIntersectContext* context, const vuint<K>& geomID, const vuint<K>& primID, const vfloat<K>& u, const vfloat<K>& v, const Vec3vf<K>& Ng)
-      : Ng(Ng), u(u), v(v), primID(primID), geomID(geomID) 
-    {
-      for (unsigned l = 0; l < RTC_MAX_INSTANCE_LEVEL_COUNT; ++l)
-        instID[l] = RTC_INVALID_GEOMETRY_ID;
-      instance_id_stack::copy(context->instID, instID);
-    }
+    __forceinline HitK(const vint<K>& instID, const vint<K>& geomID, const vint<K>& primID, const vfloat<K>& u, const vfloat<K>& v, const vfloat<K>& t, const Vec3vf<K>& Ng)
+      : Ng(Ng), instID(instID), geomID(geomID), primID(primID), u(u), v(v), t(t) {}
 
     /* Returns the size of the hit */
     static __forceinline size_t size() { return K; }
 
   public:
     Vec3vf<K> Ng;  // geometry normal
+    vint<K> instID;      // instance ID
+    vint<K> geomID;      // geometry ID
+    vint<K> primID;      // primitive ID
     vfloat<K> u;         // barycentric u coordinate of hit
     vfloat<K> v;         // barycentric v coordinate of hit
-    vuint<K> primID;      // primitive ID
-    vuint<K> geomID;      // geometry ID
-    vuint<K> instID[RTC_MAX_INSTANCE_LEVEL_COUNT];      // instance ID
+    vfloat<K> t;         // hit distance
   };
 
   /* Specialization for a single hit */
@@ -58,22 +52,20 @@ namespace embree
     __forceinline HitK() {}
 
     /* Constructs a hit */
-    __forceinline HitK(const RTCIntersectContext* context, unsigned int geomID, unsigned int primID, float u, float v, const Vec3fa& Ng)
-      : Ng(Ng.x,Ng.y,Ng.z), u(u), v(v), primID(primID), geomID(geomID)
-    {
-      instance_id_stack::copy(context->instID, instID);
-    }
+    __forceinline HitK(int instID, int geomID, int primID, float u, float v, float t, const Vec3fa& Ng)
+      : Ng(Ng.x,Ng.y,Ng.z), instID(instID), geomID(geomID), primID(primID), u(u), v(v), t(t) {}
 
     /* Returns the size of the hit */
     static __forceinline size_t size() { return 1; }
 
   public:
     Vec3<float> Ng;  // geometry normal
+    int instID;      // instance ID
+    int geomID;      // geometry ID
+    int primID;      // primitive ID
     float u;         // barycentric u coordinate of hit
     float v;         // barycentric v coordinate of hit
-    unsigned int primID;      // primitive ID
-    unsigned int geomID;      // geometry ID
-    unsigned int instID[RTC_MAX_INSTANCE_LEVEL_COUNT];      // instance ID
+    float t;         // hit distance
   };
 
   /* Shortcuts */
@@ -86,42 +78,14 @@ namespace embree
   template<int K>
   inline std::ostream& operator<<(std::ostream& cout, const HitK<K>& ray)
   {
-    cout << "{ " << std::endl
-         << "  Ng = " << ray.Ng <<  std::endl
-         << "  u = " << ray.u <<  std::endl
-         << "  v = " << ray.v << std::endl
-         << "  primID = " << ray.primID <<  std::endl
-         << "  geomID = " << ray.geomID << std::endl
-         << "  instID =";
-    for (unsigned l = 0; l < RTC_MAX_INSTANCE_LEVEL_COUNT; ++l)
-    {
-      cout << " " << ray.instID[l];
-    }
-    cout << std::endl;
-    return cout << "}";
-  }
-
-  template<typename Hit>
-    __forceinline void copyHitToRay(RayHit& ray, const Hit& hit)
-  {
-    ray.Ng   = hit.Ng;
-    ray.u    = hit.u;
-    ray.v    = hit.v;
-    ray.primID = hit.primID;
-    ray.geomID = hit.geomID;
-    instance_id_stack::copy(hit.instID, ray.instID);
-  }
-
-  template<int K>
-    __forceinline void copyHitToRay(const vbool<K> &mask, RayHitK<K> &ray, const HitK<K> &hit)
-  {
-    vfloat<K>::storeu(mask,&ray.Ng.x, hit.Ng.x);
-    vfloat<K>::storeu(mask,&ray.Ng.y, hit.Ng.y);
-    vfloat<K>::storeu(mask,&ray.Ng.z, hit.Ng.z);
-    vfloat<K>::storeu(mask,&ray.u, hit.u);
-    vfloat<K>::storeu(mask,&ray.v, hit.v);
-    vuint<K>::storeu(mask,&ray.primID, hit.primID);
-    vuint<K>::storeu(mask,&ray.geomID, hit.geomID);
-    instance_id_stack::copy(hit.instID, ray.instID, mask);
+    return cout << "{ " << std::endl
+                << "  instID = " << ray.instID << std::endl
+                << "  geomID = " << ray.geomID << std::endl
+                << "  primID = " << ray.primID <<  std::endl
+                << "  u = " << ray.u <<  std::endl
+                << "  v = " << ray.v << std::endl
+                << "  t = " << ray.v << std::endl
+                << "  Ng = " << ray.Ng
+                << "}";
   }
 }

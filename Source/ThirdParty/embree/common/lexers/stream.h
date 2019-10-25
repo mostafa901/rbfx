@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -32,23 +32,24 @@ namespace embree
   class ParseLocation
   {
   public:
-    ParseLocation () : lineNumber(-1), colNumber(-1) {}
-    ParseLocation (std::shared_ptr<std::string> fileName, ssize_t lineNumber, ssize_t colNumber, ssize_t /*charNumber*/)
-      : fileName(fileName), lineNumber(lineNumber), colNumber(colNumber) {}
+    ParseLocation () : fileName(nullptr), lineNumber(-1), colNumber(-1), charNumber(-1) {}
+    ParseLocation (const char* fileName, ssize_t lineNumber, ssize_t colNumber, ssize_t charNumber)
+      : fileName(fileName), lineNumber(lineNumber), colNumber(colNumber), charNumber(charNumber) {}
 
     std::string str() const
     {
       std::string str = "unknown";
-      if (fileName) str = *fileName;
+      if (fileName) str = fileName;
       if (lineNumber >= 0) str += " line " + toString(lineNumber);
       if (lineNumber >= 0 && colNumber >= 0) str += " character " + toString(colNumber);
       return str;
     }
 
   private:
-    std::shared_ptr<std::string> fileName;         /// name of the file (or stream) the token is from
+    const char* fileName;         /// name of the file (or stream) the token is from
     ssize_t lineNumber;           /// the line number the token is from
     ssize_t colNumber;            /// the character number in the current line
+    ssize_t charNumber;           /// the character in the file
   };
 
   /*! a stream class templated over the stream elements */
@@ -66,7 +67,7 @@ namespace embree
     }
     __forceinline void push_back(const std::pair<T,ParseLocation>& v) {
       if (past+future == BUF_SIZE) pop_front();
-      size_t end = (start+past+future++)%BUF_SIZE;
+      int end = (start+past+future++)%BUF_SIZE;
       buffer[end] = v;
     }
     __forceinline void pop_front() {
@@ -112,10 +113,10 @@ namespace embree
   {
   public:
     StdStream (std::istream& cin, const std::string& name = "std::stream")
-      : cin(cin), lineNumber(1), colNumber(0), charNumber(0), name(std::shared_ptr<std::string>(new std::string(name))) {}
+      : cin(cin), lineNumber(1), colNumber(0), charNumber(0), name(name) {}
     ~StdStream() {}
     ParseLocation location() {
-      return ParseLocation(name,lineNumber,colNumber,charNumber);
+      return ParseLocation(name.c_str(),lineNumber,colNumber,charNumber);
     }
     int next() {
       int c = cin.get();
@@ -128,7 +129,7 @@ namespace embree
     ssize_t lineNumber;           /// the line number the token is from
     ssize_t colNumber;            /// the character number in the current line
     ssize_t charNumber;           /// the character in the file
-    std::shared_ptr<std::string> name;             /// name of buffer
+    std::string name;             /// name of buffer
   };
 
   /*! creates a stream from a file */
@@ -137,10 +138,10 @@ namespace embree
   public:
 
     FileStream (FILE* file, const std::string& name = "file")
-      : file(file), lineNumber(1), colNumber(0), charNumber(0), name(std::shared_ptr<std::string>(new std::string(name))) {}
+      : file(file), lineNumber(1), colNumber(0), charNumber(0), name(name) {}
 
     FileStream (const FileName& fileName)
-      : lineNumber(1), colNumber(0), charNumber(0), name(std::shared_ptr<std::string>(new std::string(fileName.str())))
+      : lineNumber(1), colNumber(0), charNumber(0), name(fileName.str())
     {
       file = fopen(fileName.c_str(),"r");
       if (file == nullptr) THROW_RUNTIME_ERROR("cannot open file " + fileName.str());
@@ -149,7 +150,7 @@ namespace embree
 
   public:
     ParseLocation location() {
-      return ParseLocation(name,lineNumber,colNumber,charNumber);
+      return ParseLocation(name.c_str(),lineNumber,colNumber,charNumber);
     }
 
     int next() {
@@ -164,7 +165,7 @@ namespace embree
     ssize_t lineNumber;           /// the line number the token is from
     ssize_t colNumber;            /// the character number in the current line
     ssize_t charNumber;           /// the character in the file
-    std::shared_ptr<std::string> name;             /// name of buffer
+    std::string name;             /// name of buffer
   };
 
   /*! creates a stream from a string */
@@ -177,7 +178,7 @@ namespace embree
 
   public:
     ParseLocation location() {
-      return ParseLocation(std::shared_ptr<std::string>(),lineNumber,colNumber,charNumber);
+      return ParseLocation(nullptr,lineNumber,colNumber,charNumber);
     }
 
     int next() {
@@ -200,18 +201,15 @@ namespace embree
   {
   public:
     CommandLineStream (int argc, char** argv, const std::string& name = "command line")
-      : i(0), j(0), charNumber(0), name(std::shared_ptr<std::string>(new std::string(name)))
+      : i(0), j(0), charNumber(0), name(name)
     {
-      if (argc > 0) {
-	for (size_t i=0; argv[0][i] && i<1024; i++) charNumber++;
-	charNumber++;
-      }
+      if (argc > 0) charNumber = strlen(argv[0])+1;
       for (ssize_t k=1; k<argc; k++) args.push_back(argv[k]);
     }
     ~CommandLineStream() {}
   public:
     ParseLocation location() {
-      return ParseLocation(name,0,charNumber,charNumber);
+      return ParseLocation(name.c_str(),0,charNumber,charNumber);
     }
     int next() {
       if (i == args.size()) return EOF;
@@ -223,6 +221,6 @@ namespace embree
     size_t i,j;
     std::vector<std::string> args;
     ssize_t charNumber;           /// the character in the file
-    std::shared_ptr<std::string> name;             /// name of buffer
+    std::string name;             /// name of buffer
   };
 }

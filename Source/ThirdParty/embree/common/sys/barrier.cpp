@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -195,7 +195,7 @@ namespace embree
         for (size_t i=1; i<threadCount; i++)
         {
           while (likely(count0[i] == 0)) 
-            pause_cpu();
+            __pause_cpu();
         }
         mode  = 1;
         flag1 = 0;
@@ -207,7 +207,7 @@ namespace embree
         count0[threadIndex] = 1;
         {
           while (likely(flag0 == 0))
-            pause_cpu();
+            __pause_cpu();
         }
         
       }		
@@ -222,7 +222,7 @@ namespace embree
         for (size_t i=1; i<threadCount; i++)
         {		
           while (likely(count1[i] == 0))
-            pause_cpu();
+            __pause_cpu();
         }
         
         mode  = 0;
@@ -235,7 +235,7 @@ namespace embree
         count1[threadIndex] = 1;
         {
           while (likely(flag1 == 0))
-            pause_cpu();
+            __pause_cpu();
         }
       }		
     }					

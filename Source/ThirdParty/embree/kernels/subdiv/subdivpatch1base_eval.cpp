@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -93,11 +93,11 @@ namespace embree
 
       if (unlikely(patch.type == SubdivPatch1Base::EVAL_PATCH))
       {
-        const bool displ = geom->displFunc;
+        const bool displ = geom->displFunc || geom->displFunc2;
         const unsigned N = displ ? M : 0;
-        dynamic_large_stack_array(float,grid_Ng_x,N,32*32*sizeof(float));
-        dynamic_large_stack_array(float,grid_Ng_y,N,32*32*sizeof(float));
-        dynamic_large_stack_array(float,grid_Ng_z,N,32*32*sizeof(float));
+        dynamic_large_stack_array(float,grid_Ng_x,N,64*64*sizeof(float));
+        dynamic_large_stack_array(float,grid_Ng_y,N,64*64*sizeof(float));
+        dynamic_large_stack_array(float,grid_Ng_z,N,64*64*sizeof(float));
         
         if (geom->patch_eval_trees.size())
         {
@@ -136,24 +136,10 @@ namespace embree
         }
 
         /* call displacement shader */
-        if (unlikely(geom->displFunc)) {
-          RTCDisplacementFunctionNArguments args;
-          args.geometryUserPtr = geom->userPtr;
-          args.geometry = (RTCGeometry)geom;
-          //args.geomID = patch.geomID();
-          args.primID = patch.primID();
-          args.timeStep = patch.time();
-          args.u = grid_u;
-          args.v = grid_v;
-          args.Ng_x = grid_Ng_x;
-          args.Ng_y = grid_Ng_y;
-          args.Ng_z = grid_Ng_z;
-          args.P_x = grid_x;
-          args.P_y = grid_y;
-          args.P_z = grid_z;
-          args.N = dwidth*dheight;
-          geom->displFunc(&args);
-        }
+        if (unlikely(geom->displFunc))
+          geom->displFunc(geom->userPtr,patch.geomID(),patch.primID(),grid_u,grid_v,grid_Ng_x,grid_Ng_y,grid_Ng_z,grid_x,grid_y,grid_z,dwidth*dheight);
+        else if (unlikely(geom->displFunc2))
+          geom->displFunc2(geom->userPtr,patch.geomID(),patch.primID(),patch.time(),grid_u,grid_v,grid_Ng_x,grid_Ng_y,grid_Ng_z,grid_x,grid_y,grid_z,dwidth*dheight);
 
         /* set last elements in u,v array to 1.0f */
         const float last_u = grid_u[dwidth*dheight-1];
@@ -198,22 +184,17 @@ namespace embree
           if (unlikely(geom->displFunc != nullptr))
           {
             const Vec3vfx normal = normalize_safe(patchNormal(patch, u, v));
-            RTCDisplacementFunctionNArguments args;
-            args.geometryUserPtr = geom->userPtr;
-            args.geometry = (RTCGeometry)geom;
-            //args.geomID = patch.geomID();
-            args.primID = patch.primID();
-            args.timeStep = patch.time();
-            args.u = &u[0];
-            args.v = &v[0];
-            args.Ng_x = &normal.x[0];
-            args.Ng_y = &normal.y[0];
-            args.Ng_z = &normal.z[0];
-            args.P_x = &vtx.x[0];
-            args.P_y = &vtx.y[0];
-            args.P_z = &vtx.z[0];
-            args.N = VSIZEX;
-            geom->displFunc(&args);
+            geom->displFunc(geom->userPtr,patch.geomID(),patch.primID(),
+                            &u[0],&v[0],&normal.x[0],&normal.y[0],&normal.z[0],
+                            &vtx.x[0],&vtx.y[0],&vtx.z[0],VSIZEX);
+          
+          } 
+          else if (unlikely(geom->displFunc2 != nullptr))
+          {
+            const Vec3vfx normal = normalize_safe(patchNormal(patch, u, v));
+            geom->displFunc2(geom->userPtr,patch.geomID(),patch.primID(),patch.time(),
+                             &u[0],&v[0],&normal.x[0],&normal.y[0],&normal.z[0],
+                             &vtx.x[0],&vtx.y[0],&vtx.z[0],VSIZEX);
           }
 
           vfloatx::store(&grid_x[i*VSIZEX],vtx.x);
@@ -241,7 +222,7 @@ namespace embree
 
       if (unlikely(patch.type == SubdivPatch1Base::EVAL_PATCH))
       {
-        const bool displ = geom->displFunc;
+        const bool displ = geom->displFunc || geom->displFunc2;
         dynamic_large_stack_array(float,grid_x,M,64*64*sizeof(float));
         dynamic_large_stack_array(float,grid_y,M,64*64*sizeof(float));
         dynamic_large_stack_array(float,grid_z,M,64*64*sizeof(float));
@@ -272,24 +253,9 @@ namespace embree
 
         /* call displacement shader */
         if (unlikely(geom->displFunc))
-        {
-          RTCDisplacementFunctionNArguments args;
-          args.geometryUserPtr = geom->userPtr;
-          args.geometry = (RTCGeometry)geom;
-          //args.geomID = patch.geomID();
-          args.primID = patch.primID();
-          args.timeStep = patch.time();
-          args.u = grid_u;
-          args.v = grid_v;
-          args.Ng_x = grid_Ng_x;
-          args.Ng_y = grid_Ng_y;
-          args.Ng_z = grid_Ng_z;
-          args.P_x = grid_x;
-          args.P_y = grid_y;
-          args.P_z = grid_z;
-          args.N = dwidth*dheight;
-          geom->displFunc(&args);
-        }
+          geom->displFunc(geom->userPtr,patch.geomID(),patch.primID(),grid_u,grid_v,grid_Ng_x,grid_Ng_y,grid_Ng_z,grid_x,grid_y,grid_z,dwidth*dheight);
+        else if (unlikely(geom->displFunc2))
+          geom->displFunc2(geom->userPtr,patch.geomID(),patch.primID(),patch.time(),grid_u,grid_v,grid_Ng_x,grid_Ng_y,grid_Ng_z,grid_x,grid_y,grid_z,dwidth*dheight);
 
         /* set last elements in u,v array to 1.0f */
         const float last_u = grid_u[dwidth*dheight-1];
@@ -374,22 +340,17 @@ namespace embree
           if (unlikely(geom->displFunc != nullptr))
           {
             const Vec3vfx normal = normalize_safe(patchNormal(patch,u,v));
-            RTCDisplacementFunctionNArguments args;
-            args.geometryUserPtr = geom->userPtr;
-            args.geometry = (RTCGeometry)geom;
-            //args.geomID = patch.geomID();
-            args.primID = patch.primID();
-            args.timeStep = patch.time();
-            args.u = &u[0];
-            args.v = &v[0];
-            args.Ng_x = &normal.x[0];
-            args.Ng_y = &normal.y[0];
-            args.Ng_z = &normal.z[0];
-            args.P_x = &vtx.x[0];
-            args.P_y = &vtx.y[0];
-            args.P_z = &vtx.z[0];
-            args.N = VSIZEX;
-            geom->displFunc(&args);
+            geom->displFunc(geom->userPtr,patch.geomID(),patch.primID(),
+                            &u[0],&v[0],&normal.x[0],&normal.y[0],&normal.z[0],
+                            &vtx.x[0],&vtx.y[0],&vtx.z[0],VSIZEX);
+          
+          }
+          else if (unlikely(geom->displFunc2 != nullptr))
+          {
+            const Vec3vfx normal = normalize_safe(patchNormal(patch,u,v));
+            geom->displFunc2(geom->userPtr,patch.geomID(),patch.primID(),patch.time(),
+                            &u[0],&v[0],&normal.x[0],&normal.y[0],&normal.z[0],
+                            &vtx.x[0],&vtx.y[0],&vtx.z[0],VSIZEX);
           }
 
           bounds_min[0] = min(bounds_min[0],vtx.x);

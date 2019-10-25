@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -59,11 +59,6 @@ namespace embree
     /*! merges two boxes */
     __forceinline static const BBox merge (const BBox& a, const BBox& b) {
       return BBox(min(a.lower, b.lower), max(a.upper, b.upper));
-    }
-
-     /*! enlarge box by some scaling factor */
-    __forceinline BBox enlarge_by(const float a) {
-      return BBox(lower - T(a)*abs(lower), upper + T(a)*abs(upper));
     }
     
     ////////////////////////////////////////////////////////////////////////////////
@@ -189,10 +184,6 @@ namespace embree
     return true; 
   }
 
-  template<> __inline bool subset( const BBox<Vec3fa>& a, const BBox<Vec3fa>& b ) {
-    return all(ge_mask(a.lower,b.lower)) & all(le_mask(a.upper,b.upper));
-  }
-  
   /*! blending */
   template<typename T>
     __forceinline BBox<T> lerp(const BBox<T>& b0, const BBox<T>& b1, const float t) {
@@ -207,7 +198,6 @@ namespace embree
   /*! default template instantiations */
   typedef BBox<float> BBox1f;
   typedef BBox<Vec2f> BBox2f;
-  typedef BBox<Vec2fa> BBox2fa;
   typedef BBox<Vec3f> BBox3f;
   typedef BBox<Vec3fa> BBox3fa;
 }

@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -20,7 +20,6 @@
 #include "../common/isa.h"
 #include "../common/accel.h"
 #include "../common/scene.h"
-#include "../geometry/curve_intersector_virtual.h"
 
 namespace embree
 {

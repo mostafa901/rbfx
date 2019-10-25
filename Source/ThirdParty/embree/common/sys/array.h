@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -130,8 +130,7 @@ namespace embree
   template<typename Ty, size_t max_stack_bytes>
     struct __aligned(64) StackArray
   {
-    __forceinline StackArray (const size_t N)
-      : N(N)
+    __forceinline StackArray (const size_t N) 
     {
       if (N*sizeof(Ty) <= max_stack_bytes) 
         data = &arr[0];
@@ -146,90 +145,19 @@ namespace embree
     __forceinline operator       Ty* ()       { return data; }
     __forceinline operator const Ty* () const { return data; }
 
-    __forceinline       Ty& operator[](const int i)       { assert(i>=0 && i<N); return data[i]; }
-    __forceinline const Ty& operator[](const int i) const { assert(i>=0 && i<N); return data[i]; }
+    __forceinline       Ty& operator[](const int i)       { return data[i]; }
+    __forceinline const Ty& operator[](const int i) const { return data[i]; }
 
-    __forceinline       Ty& operator[](const unsigned i)       { assert(i<N); return data[i]; }
-    __forceinline const Ty& operator[](const unsigned i) const { assert(i<N); return data[i]; }
+    __forceinline       Ty& operator[](const unsigned i)       { return data[i]; }
+    __forceinline const Ty& operator[](const unsigned i) const { return data[i]; }
 
 #if defined(__X86_64__)
-    __forceinline       Ty& operator[](const size_t i)       { assert(i<N); return data[i]; }
-    __forceinline const Ty& operator[](const size_t i) const { assert(i<N); return data[i]; }
+    __forceinline       Ty& operator[](const size_t i)       { return data[i]; }
+    __forceinline const Ty& operator[](const size_t i) const { return data[i]; }
 #endif
 
   private:
     Ty arr[max_stack_bytes/sizeof(Ty)];
-    Ty* data;
-    size_t N;
-
-  private:
-    StackArray (const StackArray& other) DELETED; // do not implement
-    StackArray& operator= (const StackArray& other) DELETED; // do not implement
-
-  };
-
-  /*! dynamic sized array that is allocated on the stack */
-  template<typename Ty, size_t max_stack_elements, size_t max_total_elements>
-    struct __aligned(64) DynamicStackArray
-  {
-    __forceinline DynamicStackArray ()
-      : data(&arr[0]) {}
-
-    __forceinline ~DynamicStackArray ()
-    {
-      if (!isStackAllocated())
-        delete[] data;
-    }
-
-    __forceinline bool isStackAllocated() const {
-      return data == &arr[0];
-    }
-
-    __forceinline size_t size() const
-    {
-      if (isStackAllocated()) return max_stack_elements;
-      else return max_total_elements;
-    }
-
-    __forceinline void resize(size_t M)
-    {
-      assert(M <= max_total_elements);
-      if (likely(M <= max_stack_elements)) return;
-      if (likely(!isStackAllocated())) return;
-
-      data = new Ty[max_total_elements];
-      
-      for (size_t i=0; i<max_stack_elements; i++)
-        data[i] = arr[i];
-    }
-
-    __forceinline operator       Ty* ()       { return data; }
-    __forceinline operator const Ty* () const { return data; }
-
-    __forceinline       Ty& operator[](const int i)      { assert(i>=0 && i<max_total_elements); resize(i+1); return data[i]; }
-    __forceinline       Ty& operator[](const unsigned i) { assert(i<max_total_elements); resize(i+1); return data[i]; }
-
-#if defined(__X86_64__)
-    __forceinline       Ty& operator[](const size_t i) { assert(i<max_total_elements); resize(i+1); return data[i]; }
-#endif
-
-    __forceinline DynamicStackArray (const DynamicStackArray& other)
-      : data(&arr[0]) 
-    {
-      for (size_t i=0; i<other.size(); i++)
-        this->operator[] (i) = other[i];
-    }
-     
-    DynamicStackArray& operator= (const DynamicStackArray& other)
-    {
-      for (size_t i=0; i<other.size(); i++)
-        this->operator[] (i) = other[i];
-
-      return *this;
-    }
-
-  private:
-    Ty arr[max_stack_elements];
     Ty* data;
   };
 }

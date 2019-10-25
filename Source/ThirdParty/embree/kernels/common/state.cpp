@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -15,7 +15,7 @@
 // ======================================================================== //
 
 #include "state.h"
-#include "../../common/lexers/streamfilters.h"
+#include "../common/lexers/streamfilters.h"
 
 namespace embree
 {
@@ -41,16 +41,15 @@ namespace embree
     if (stored_error) return stored_error;
 
     Lock<MutexSys> lock(errors_mutex);
-    stored_error = new RTCError(RTC_ERROR_NONE);
+    stored_error = new RTCError(RTC_NO_ERROR);
     thread_errors.push_back(stored_error);
     setTls(thread_error,stored_error);
     return stored_error;
   }
 
-  State::State () 
+  State::State (bool singledevice) 
     : enabled_cpu_features(getCPUFeatures()),
-      enabled_builder_cpu_features(enabled_cpu_features),
-      frequency_level(FREQUENCY_SIMD256)
+      enabled_builder_cpu_features(enabled_cpu_features)
   {
     tri_accel = "default";
     tri_builder = "default";
@@ -95,17 +94,18 @@ namespace embree
     object_accel_mb_max_leaf_size = 1;
 
     max_spatial_split_replications = 2.0f;
-    useSpatialPreSplits = false;
 
     tessellation_cache_size = 128*1024*1024;
 
+    /* large default cache size only for old mode single device mode */
+#if defined(__X86_64__)
+      if (singledevice) tessellation_cache_size = 1024*1024*1024;
+#else
+      if (singledevice) tessellation_cache_size = 128*1024*1024;
+#endif
+
     subdiv_accel = "default";
     subdiv_accel_mb = "default";
-
-    grid_accel = "default";
-    grid_builder = "default";
-    grid_accel_mb = "default";
-    grid_builder_mb = "default";
 
     instancing_open_min = 0;
     instancing_block_size = 0;
@@ -115,14 +115,11 @@ namespace embree
 
     ignore_config_files = false;
     float_exceptions = false;
-    quality_flags = -1;
     scene_flags = -1;
     verbose = 0;
     benchmark = 0;
 
     numThreads = 0;
-    numUserThreads = 0;
-
 #if TASKING_INTERNAL
     set_affinity = true;
 #else
@@ -146,9 +143,11 @@ namespace embree
     alloc_single_thread_alloc = -1;
 
     error_function = nullptr;
+    error_function2 = nullptr;
     error_function_userptr = nullptr;
 
     memory_monitor_function = nullptr;
+    memory_monitor_function2 = nullptr;
     memory_monitor_userptr = nullptr;
   }
 
@@ -250,9 +249,6 @@ namespace embree
       if (tok == Token::Id("threads") && cin->trySymbol("=")) 
         numThreads = cin->get().Int();
 
-      else if (tok == Token::Id("user_threads")&& cin->trySymbol("=")) 
-        numUserThreads = cin->get().Int();
-
       else if (tok == Token::Id("set_affinity")&& cin->trySymbol("=")) 
         set_affinity = cin->get().Int();
 
@@ -277,13 +273,6 @@ namespace embree
       else if (tok == Token::Id("max_builder_isa") && cin->trySymbol("=")) {
         std::string isa = toLowerCase(cin->get().Identifier());
         enabled_builder_cpu_features &= string_to_cpufeatures(isa);
-      }
-
-      else if (tok == Token::Id("frequency_level") && cin->trySymbol("=")) {
-        std::string freq = cin->get().Identifier();
-        if      (freq == "simd128") frequency_level = FREQUENCY_SIMD128;
-        else if (freq == "simd256") frequency_level = FREQUENCY_SIMD256;
-        else if (freq == "simd512") frequency_level = FREQUENCY_SIMD512;
       }
 
       else if (tok == Token::Id("enable_selockmemoryprivilege") && cin->trySymbol("=")) {
@@ -391,43 +380,30 @@ namespace embree
         subdiv_accel = cin->get().Identifier();
       else if (tok == Token::Id("subdiv_accel_mb") && cin->trySymbol("="))
         subdiv_accel_mb = cin->get().Identifier();
-
-      else if (tok == Token::Id("grid_accel") && cin->trySymbol("="))
-        grid_accel = cin->get().Identifier();
-      else if (tok == Token::Id("grid_accel_mb") && cin->trySymbol("="))
-        grid_accel_mb = cin->get().Identifier();
       
       else if (tok == Token::Id("verbose") && cin->trySymbol("="))
         verbose = cin->get().Int();
       else if (tok == Token::Id("benchmark") && cin->trySymbol("="))
         benchmark = cin->get().Int();
       
-      else if (tok == Token::Id("quality")) {
-        if (cin->trySymbol("=")) {
-          Token flag = cin->get();
-          if      (flag == Token::Id("low"))    quality_flags = RTC_BUILD_QUALITY_LOW;
-          else if (flag == Token::Id("medium")) quality_flags = RTC_BUILD_QUALITY_MEDIUM;
-          else if (flag == Token::Id("high"))   quality_flags = RTC_BUILD_QUALITY_HIGH;
-        }
-      }
-
-      else if (tok == Token::Id("scene_flags")) {
+      else if (tok == Token::Id("flags")) {
         scene_flags = 0;
         if (cin->trySymbol("=")) {
           do {
             Token flag = cin->get();
-            if (flag == Token::Id("dynamic") ) scene_flags |= RTC_SCENE_FLAG_DYNAMIC;
-            else if (flag == Token::Id("compact")) scene_flags |= RTC_SCENE_FLAG_COMPACT;
-            else if (flag == Token::Id("robust")) scene_flags |= RTC_SCENE_FLAG_ROBUST;
+            if      (flag == Token::Id("static") ) scene_flags |= RTC_SCENE_STATIC;
+            else if (flag == Token::Id("dynamic")) scene_flags |= RTC_SCENE_DYNAMIC;
+            else if (flag == Token::Id("compact")) scene_flags |= RTC_SCENE_COMPACT;
+            else if (flag == Token::Id("coherent")) scene_flags |= RTC_SCENE_COHERENT;
+            else if (flag == Token::Id("incoherent")) scene_flags |= RTC_SCENE_INCOHERENT;
+            else if (flag == Token::Id("high_quality")) scene_flags |= RTC_SCENE_HIGH_QUALITY;
+            else if (flag == Token::Id("robust")) scene_flags |= RTC_SCENE_ROBUST;
           } while (cin->trySymbol("|"));
         }
       }
-      
+
       else if (tok == Token::Id("max_spatial_split_replications") && cin->trySymbol("="))
         max_spatial_split_replications = cin->get().Float();
-
-      else if (tok == Token::Id("presplits") && cin->trySymbol("="))
-        useSpatialPreSplits = cin->get().Int() != 0 ? true : false;
 
       else if (tok == Token::Id("tessellation_cache_size") && cin->trySymbol("="))
         tessellation_cache_size = size_t(cin->get().Float()*1024.0f*1024.0f);
@@ -454,84 +430,68 @@ namespace embree
   void State::print()
   {
     std::cout << "general:" << std::endl;
-    std::cout << "  build threads      = " << numThreads   << std::endl;
-    std::cout << "  build user threads = " << numUserThreads   << std::endl;
-    std::cout << "  start_threads      = " << start_threads << std::endl;
-    std::cout << "  affinity           = " << set_affinity << std::endl;
-    std::cout << "  frequency_level    = ";
-    switch (frequency_level) {
-    case FREQUENCY_SIMD128: std::cout << "simd128" << std::endl; break;
-    case FREQUENCY_SIMD256: std::cout << "simd256" << std::endl; break;
-    case FREQUENCY_SIMD512: std::cout << "simd512" << std::endl; break;
-    default: std::cout << "error" << std::endl; break;
-    }
+    std::cout << "  build threads = " << numThreads   << std::endl;
+    std::cout << "  start_threads = " << start_threads << std::endl;
+    std::cout << "  affinity      = " << set_affinity << std::endl;
     
-    std::cout << "  hugepages          = ";
+    std::cout << "  hugepages     = ";
     if (!hugepages) std::cout << "disabled" << std::endl;
     else if (hugepages_success) std::cout << "enabled" << std::endl;
     else std::cout << "failed" << std::endl;
 
-    std::cout << "  verbosity          = " << verbose << std::endl;
-    std::cout << "  cache_size         = " << float(tessellation_cache_size)*1E-6 << " MB" << std::endl;
+    std::cout << "  verbosity     = " << verbose << std::endl;
+    std::cout << "  cache_size    = " << float(tessellation_cache_size)*1E-6 << " MB" << std::endl;
     std::cout << "  max_spatial_split_replications = " << max_spatial_split_replications << std::endl;
     
     std::cout << "triangles:" << std::endl;
-    std::cout << "  accel              = " << tri_accel << std::endl;
-    std::cout << "  builder            = " << tri_builder << std::endl;
-    std::cout << "  traverser          = " << tri_traverser << std::endl;
+    std::cout << "  accel         = " << tri_accel << std::endl;
+    std::cout << "  builder       = " << tri_builder << std::endl;
+    std::cout << "  traverser     = " << tri_traverser << std::endl;
         
     std::cout << "motion blur triangles:" << std::endl;
-    std::cout << "  accel              = " << tri_accel_mb << std::endl;
-    std::cout << "  builder            = " << tri_builder_mb << std::endl;
-    std::cout << "  traverser          = " << tri_traverser_mb << std::endl;
+    std::cout << "  accel         = " << tri_accel_mb << std::endl;
+    std::cout << "  builder       = " << tri_builder_mb << std::endl;
+    std::cout << "  traverser     = " << tri_traverser_mb << std::endl;
 
     std::cout << "quads:" << std::endl;
-    std::cout << "  accel              = " << quad_accel << std::endl;
-    std::cout << "  builder            = " << quad_builder << std::endl;
-    std::cout << "  traverser          = " << quad_traverser << std::endl;
+    std::cout << "  accel         = " << quad_accel << std::endl;
+    std::cout << "  builder       = " << quad_builder << std::endl;
+    std::cout << "  traverser     = " << quad_traverser << std::endl;
 
     std::cout << "motion blur quads:" << std::endl;
-    std::cout << "  accel              = " << quad_accel_mb << std::endl;
-    std::cout << "  builder            = " << quad_builder_mb << std::endl;
-    std::cout << "  traverser          = " << quad_traverser_mb << std::endl;
+    std::cout << "  accel         = " << quad_accel_mb << std::endl;
+    std::cout << "  builder       = " << quad_builder_mb << std::endl;
+    std::cout << "  traverser     = " << quad_traverser_mb << std::endl;
 
     std::cout << "line segments:" << std::endl;
-    std::cout << "  accel              = " << line_accel << std::endl;
-    std::cout << "  builder            = " << line_builder << std::endl;
-    std::cout << "  traverser          = " << line_traverser << std::endl;
+    std::cout << "  accel         = " << line_accel << std::endl;
+    std::cout << "  builder       = " << line_builder << std::endl;
+    std::cout << "  traverser     = " << line_traverser << std::endl;
 
     std::cout << "motion blur line segments:" << std::endl;
-    std::cout << "  accel              = " << line_accel_mb << std::endl;
-    std::cout << "  builder            = " << line_builder_mb << std::endl;
-    std::cout << "  traverser          = " << line_traverser_mb << std::endl;
+    std::cout << "  accel         = " << line_accel_mb << std::endl;
+    std::cout << "  builder       = " << line_builder_mb << std::endl;
+    std::cout << "  traverser     = " << line_traverser_mb << std::endl;
     
     std::cout << "hair:" << std::endl;
-    std::cout << "  accel              = " << hair_accel << std::endl;
-    std::cout << "  builder            = " << hair_builder << std::endl;
-    std::cout << "  traverser          = " << hair_traverser << std::endl;
+    std::cout << "  accel         = " << hair_accel << std::endl;
+    std::cout << "  builder       = " << hair_builder << std::endl;
+    std::cout << "  traverser     = " << hair_traverser << std::endl;
 
     std::cout << "motion blur hair:" << std::endl;
-    std::cout << "  accel              = " << hair_accel_mb << std::endl;
-    std::cout << "  builder            = " << hair_builder_mb << std::endl;
-    std::cout << "  traverser          = " << hair_traverser_mb << std::endl;
+    std::cout << "  accel         = " << hair_accel_mb << std::endl;
+    std::cout << "  builder       = " << hair_builder_mb << std::endl;
+    std::cout << "  traverser     = " << hair_traverser_mb << std::endl;
     
     std::cout << "subdivision surfaces:" << std::endl;
-    std::cout << "  accel              = " << subdiv_accel << std::endl;
-
-    std::cout << "grids:" << std::endl;
-    std::cout << "  accel              = " << grid_accel << std::endl;
-    std::cout << "  builder            = " << grid_builder << std::endl;
-
-    std::cout << "motion blur grids:" << std::endl;
-    std::cout << "  accel              = " << grid_accel_mb << std::endl;
-    std::cout << "  builder            = " << grid_builder_mb << std::endl;
+    std::cout << "  accel         = " << subdiv_accel << std::endl;
 
     std::cout << "object_accel:" << std::endl;
-    std::cout << "  min_leaf_size      = " << object_accel_min_leaf_size << std::endl;
-    std::cout << "  max_leaf_size      = " << object_accel_max_leaf_size << std::endl;
+    std::cout << "  min_leaf_size = " << object_accel_min_leaf_size << std::endl;
+    std::cout << "  max_leaf_size = " << object_accel_max_leaf_size << std::endl;
 
     std::cout << "object_accel_mb:" << std::endl;
-    std::cout << "  min_leaf_size      = " << object_accel_mb_min_leaf_size << std::endl;
-    std::cout << "  max_leaf_size      = " << object_accel_mb_max_leaf_size << std::endl;
+    std::cout << "  min_leaf_size = " << object_accel_mb_min_leaf_size << std::endl;
+    std::cout << "  max_leaf_size = " << object_accel_mb_max_leaf_size << std::endl;
   }
 }

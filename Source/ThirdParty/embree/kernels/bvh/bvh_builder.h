@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -21,11 +21,6 @@ namespace embree
 {
   namespace isa
   {
-    /************************************************************************************/
-    /************************************************************************************/
-    /************************************************************************************/
-    /************************************************************************************/
-
     template<int N>
       struct BVHNBuilderVirtual
       {
@@ -35,7 +30,7 @@ namespace embree
       
         struct BVHNBuilderV {
           NodeRef build(FastAllocator* allocator, BuildProgressMonitor& progress, PrimRef* prims, const PrimInfo& pinfo, GeneralBVHBuilder::Settings settings);
-          virtual NodeRef createLeaf (const PrimRef* prims, const range<size_t>& set, const Allocator& alloc) = 0;
+          virtual NodeRef createLeaf (const range<size_t>& set, const Allocator& alloc) = 0;
         };
 
         template<typename CreateLeafFunc>
@@ -44,8 +39,8 @@ namespace embree
           BVHNBuilderT (CreateLeafFunc createLeafFunc)
             : createLeafFunc(createLeafFunc) {}
 
-          NodeRef createLeaf (const PrimRef* prims, const range<size_t>& set, const Allocator& alloc) {
-            return createLeafFunc(prims,set,alloc);
+          NodeRef createLeaf (const range<size_t>& set, const Allocator& alloc) {
+            return createLeafFunc(set,alloc);
           }
 
         private:
@@ -67,7 +62,7 @@ namespace embree
       
         struct BVHNBuilderV {
           NodeRef build(FastAllocator* allocator, BuildProgressMonitor& progress, PrimRef* prims, const PrimInfo& pinfo, GeneralBVHBuilder::Settings settings);
-          virtual NodeRef createLeaf (const PrimRef* prims, const range<size_t>& set, const Allocator& alloc) = 0;
+          virtual NodeRef createLeaf (const range<size_t>& set, const Allocator& alloc) = 0;
         };
 
         template<typename CreateLeafFunc>
@@ -76,8 +71,8 @@ namespace embree
           BVHNBuilderT (CreateLeafFunc createLeafFunc)
             : createLeafFunc(createLeafFunc) {}
 
-          NodeRef createLeaf (const PrimRef* prims, const range<size_t>& set, const Allocator& alloc) {
-            return createLeafFunc(prims,set,alloc);
+          NodeRef createLeaf (const range<size_t>& set, const Allocator& alloc) {
+            return createLeafFunc(set,alloc);
           }
 
         private:
@@ -101,7 +96,7 @@ namespace embree
       
         struct BVHNBuilderV {
           NodeRecordMB build(FastAllocator* allocator, BuildProgressMonitor& progress, PrimRef* prims, const PrimInfo& pinfo, GeneralBVHBuilder::Settings settings, const BBox1f& timeRange);
-          virtual NodeRecordMB createLeaf (const PrimRef* prims, const range<size_t>& set, const Allocator& alloc) = 0;
+          virtual NodeRecordMB createLeaf (const range<size_t>& set, const Allocator& alloc) = 0;
         };
 
         template<typename CreateLeafFunc>
@@ -110,8 +105,8 @@ namespace embree
           BVHNBuilderT (CreateLeafFunc createLeafFunc)
             : createLeafFunc(createLeafFunc) {}
 
-          NodeRecordMB createLeaf (const PrimRef* prims, const range<size_t>& set, const Allocator& alloc) {
-            return createLeafFunc(prims,set,alloc);
+          NodeRecordMB createLeaf (const range<size_t>& set, const Allocator& alloc) {
+            return createLeafFunc(set,alloc);
           }
 
         private:

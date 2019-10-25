@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -25,7 +25,7 @@ namespace embree
   struct TriangleMesh : public Geometry
   {
     /*! type of this geometry */
-    static const Geometry::GTypeMask geom_type = Geometry::MTY_TRIANGLE_MESH;
+    static const Geometry::Type geom_type = Geometry::TRIANGLE_MESH;
 
     /*! triangle indices */
     struct Triangle 
@@ -38,27 +38,90 @@ namespace embree
       }
     };
 
+    /*! triangle edge based on two indices */
+    struct Edge 
+    {
+      uint64_t e;
+
+      __forceinline Edge() {}
+
+      __forceinline Edge(const uint32_t& v0, const uint32_t& v1) {
+        e = v0 < v1 ? (((uint64_t)v1 << 32) | (uint64_t)v0) : (((uint64_t)v0 << 32) | (uint64_t)v1);
+      }
+
+      __forceinline friend bool operator==( const Edge& a, const Edge& b ) { 
+        return a.e == b.e; 
+      }
+    };
+
+    /* last edge of triangle 0 is shared */
+    static __forceinline unsigned int pair_order(const unsigned int tri0_vtx_index0,
+                                                 const unsigned int tri0_vtx_index1,
+                                                 const unsigned int tri0_vtx_index2,
+                                                 const unsigned int tri1_vtx_index)
+    {
+      return \
+        (tri0_vtx_index0  <<  0) |
+        (tri0_vtx_index1  <<  8) |
+        (tri0_vtx_index2  << 16) |
+        (tri1_vtx_index   << 24);
+    }
+
+    /*! tests if a shared exists between two triangles, returns -1 if no shared edge exists and the opposite vertex index of the second triangle if a shared edge exists */
+    static __forceinline int sharedEdge(const Triangle &tri0,
+                                        const Triangle &tri1)
+    {
+      const Edge tri0_edge0(tri0.v[0],tri0.v[1]);
+      const Edge tri0_edge1(tri0.v[1],tri0.v[2]);
+      const Edge tri0_edge2(tri0.v[2],tri0.v[0]);
+
+      const Edge tri1_edge0(tri1.v[0],tri1.v[1]);
+      const Edge tri1_edge1(tri1.v[1],tri1.v[2]);
+      const Edge tri1_edge2(tri1.v[2],tri1.v[0]);
+
+      /* rotate triangle 0 to force shared edge between the first and last vertex */
+
+      if (unlikely(tri0_edge0 == tri1_edge0)) return pair_order(1,2,0, 2); 
+      if (unlikely(tri0_edge1 == tri1_edge0)) return pair_order(2,0,1, 2); 
+      if (unlikely(tri0_edge2 == tri1_edge0)) return pair_order(0,1,2, 2);
+
+      if (unlikely(tri0_edge0 == tri1_edge1)) return pair_order(1,2,0, 0); 
+      if (unlikely(tri0_edge1 == tri1_edge1)) return pair_order(2,0,1, 0); 
+      if (unlikely(tri0_edge2 == tri1_edge1)) return pair_order(0,1,2, 0); 
+
+      if (unlikely(tri0_edge0 == tri1_edge2)) return pair_order(1,2,0, 1); 
+      if (unlikely(tri0_edge1 == tri1_edge2)) return pair_order(2,0,1, 1); 
+      if (unlikely(tri0_edge2 == tri1_edge2)) return pair_order(0,1,2, 1); 
+
+      return -1;
+    }
+
   public:
 
     /*! triangle mesh construction */
-    TriangleMesh (Device* device); 
+    TriangleMesh (Scene* scene, RTCGeometryFlags flags, size_t numTriangles, size_t numVertices, size_t numTimeSteps); 
 
     /* geometry interface */
   public:
     void enabling();
     void disabling();
-    void setMask(unsigned mask);
-    void setNumTimeSteps (unsigned int numTimeSteps);
-    void setVertexAttributeCount (unsigned int N);
-    void setBuffer(RTCBufferType type, unsigned int slot, RTCFormat format, const Ref<Buffer>& buffer, size_t offset, size_t stride, unsigned int num);
-    void* getBuffer(RTCBufferType type, unsigned int slot);
-    void updateBuffer(RTCBufferType type, unsigned int slot);
+    void setMask (unsigned mask);
+    void setBuffer(RTCBufferType type, void* ptr, size_t offset, size_t stride, size_t size);
+    void* map(RTCBufferType type);
+    void unmap(RTCBufferType type);
     void preCommit();
     void postCommit();
-    bool verify();
-    void interpolate(const RTCInterpolateArguments* const args);
+    void immutable ();
+    bool verify ();
+    void interpolate(unsigned primID, float u, float v, RTCBufferType buffer, float* P, float* dPdu, float* dPdv, float* ddPdudu, float* ddPdvdv, float* ddPdudv, size_t numFloats);
+    // FIXME: implement interpolateN
 
   public:
+
+    /*! returns number of triangles */
+    __forceinline size_t size() const {
+      return triangles.size();
+    }
 
     /*! returns number of vertices */
     __forceinline size_t numVertices() const {
@@ -192,78 +255,32 @@ namespace embree
     }
 
     /*! calculates the linear bounds of the i'th primitive for the specified time range */
-    __forceinline LBBox3fa linearBounds(size_t primID, const BBox1f& dt) const {
-      return LBBox3fa([&] (size_t itime) { return bounds(primID, itime); }, dt, time_range, fnumTimeSegments);
+    __forceinline LBBox3fa linearBounds(size_t primID, const BBox1f& time_range) const {
+      return LBBox3fa([&] (size_t itime) { return bounds(primID, itime); }, time_range, fnumTimeSegments);
     }
 
     /*! calculates the linear bounds of the i'th primitive for the specified time range */
-    __forceinline bool linearBounds(size_t i, const BBox1f& dt, LBBox3fa& bbox) const  {
-      if (!valid(i, timeSegmentRange(dt))) return false;
-      bbox = linearBounds(i, dt);
+    __forceinline bool linearBounds(size_t i, const BBox1f& time_range, LBBox3fa& bbox) const  {
+      if (!valid(i, getTimeSegmentRange(time_range, fnumTimeSegments))) return false;
+      bbox = linearBounds(i, time_range);
       return true;
     }
 
-    /* returns true if topology changed */
-    bool topologyChanged() const {
-      return triangles.isModified() || numPrimitivesChanged;
-    }
-
   public:
-    BufferView<Triangle> triangles;      //!< array of triangles
-    BufferView<Vec3fa> vertices0;        //!< fast access to first vertex buffer
-    vector<BufferView<Vec3fa>> vertices; //!< vertex array for each timestep
-    vector<RawBufferView> vertexAttribs; //!< vertex attributes
+    APIBuffer<Triangle> triangles;                    //!< array of triangles
+    BufferRefT<Vec3fa> vertices0;                     //!< fast access to first vertex buffer
+    vector<APIBuffer<Vec3fa>> vertices;               //!< vertex array for each timestep
+    vector<APIBuffer<char>> userbuffers;         //!< user buffers
   };
 
   namespace isa
   {
     struct TriangleMeshISA : public TriangleMesh
     {
-      TriangleMeshISA (Device* device)
-        : TriangleMesh(device) {}
-
-      PrimInfo createPrimRefArray(mvector<PrimRef>& prims, const range<size_t>& r, size_t k) const
-      {
-        PrimInfo pinfo(empty);
-        for (size_t j=r.begin(); j<r.end(); j++)
-        {
-          BBox3fa bounds = empty;
-          if (!buildBounds(j,&bounds)) continue;
-          const PrimRef prim(bounds,geomID,unsigned(j));
-          pinfo.add_center2(prim);
-          prims[k++] = prim;
-        }
-        return pinfo;
-      }
-
-      PrimInfo createPrimRefArrayMB(mvector<PrimRef>& prims, size_t itime, const range<size_t>& r, size_t k) const
-      {
-        PrimInfo pinfo(empty);
-        for (size_t j=r.begin(); j<r.end(); j++)
-        {
-          BBox3fa bounds = empty;
-          if (!buildBounds(j,itime,bounds)) continue;
-          const PrimRef prim(bounds,geomID,unsigned(j));
-          pinfo.add_center2(prim);
-          prims[k++] = prim;
-        }
-        return pinfo;
-      }
-      
-      PrimInfoMB createPrimRefMBArray(mvector<PrimRefMB>& prims, const BBox1f& t0t1, const range<size_t>& r, size_t k) const
-      {
-        PrimInfoMB pinfo(empty);
-        for (size_t j=r.begin(); j<r.end(); j++)
-        {
-          if (!valid(j, timeSegmentRange(t0t1))) continue;
-          const PrimRefMB prim(linearBounds(j,t0t1),this->numTimeSegments(),this->time_range,this->numTimeSegments(),this->geomID,unsigned(j));
-          pinfo.add_primref(prim);
-          prims[k++] = prim;
-        }
-        return pinfo;
-      }
+      TriangleMeshISA (Scene* scene, RTCGeometryFlags flags, size_t numTriangles, size_t numVertices, size_t numTimeSteps)
+        : TriangleMesh(scene,flags,numTriangles,numVertices,numTimeSteps) {}
     };
   }
 
-  DECLARE_ISA_FUNCTION(TriangleMesh*, createTriangleMesh, Device*);
+  DECLARE_ISA_FUNCTION(TriangleMesh*, createTriangleMesh, Scene* COMMA RTCGeometryFlags COMMA size_t COMMA size_t COMMA size_t);
 }

@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -17,7 +17,7 @@
 #pragma once
 
 #include "../common/ray.h"
-#include "curve_intersector_precalculations.h"
+#include "filter.h"
 
 namespace embree
 {
@@ -45,9 +45,22 @@ namespace embree
       };
     
     template<int M>
-      struct FlatLinearCurveIntersector1
-      {
-        typedef CurvePrecalculations1 Precalculations;
+      struct LineIntersector1
+      { 
+        struct Precalculations
+        {
+          __forceinline Precalculations() {}
+
+          __forceinline Precalculations(const Ray& ray, const void* ptr)
+          {
+            const float s = rsqrt(dot(ray.dir,ray.dir));
+            depth_scale = s;
+            ray_space = frame(s*ray.dir).transposed();
+          }
+          
+          vfloat<M> depth_scale;
+          LinearSpace3<Vec3vf<M>> ray_space;
+        };
         
         template<typename Epilog>
         static __forceinline bool intersect(const vbool<M>& valid_i,
@@ -57,10 +70,8 @@ namespace embree
         {
           /* transform end points into ray space */
           vbool<M> valid = valid_i;
-          vfloat<M> depth_scale = pre.depth_scale;
-          LinearSpace3<Vec3vf<M>> ray_space = pre.ray_space;
-          Vec4vf<M> p0(xfmVector(ray_space,v0.xyz()-Vec3vf<M>(ray.org)), v0.w);
-          Vec4vf<M> p1(xfmVector(ray_space,v1.xyz()-Vec3vf<M>(ray.org)), v1.w);
+          Vec4vf<M> p0(xfmVector(pre.ray_space,v0.xyz()-Vec3vf<M>(ray.org)), v0.w);
+          Vec4vf<M> p1(xfmVector(pre.ray_space,v1.xyz()-Vec3vf<M>(ray.org)), v1.w);
           
           /* approximative intersection with cone */
           const Vec4vf<M> v = p1-p0;
@@ -69,13 +80,11 @@ namespace embree
           const vfloat<M> d1 = madd(v.x,v.x,v.y*v.y);
           const vfloat<M> u = clamp(d0*rcp(d1),vfloat<M>(zero),vfloat<M>(one));
           const Vec4vf<M> p = madd(u,v,p0);
-          const vfloat<M> t = p.z;
+          const vfloat<M> t = p.z*pre.depth_scale;
           const vfloat<M> d2 = madd(p.x,p.x,p.y*p.y);
           const vfloat<M> r = p.w;
           const vfloat<M> r2 = r*r;
-          valid &= (d2 <= r2) & (vfloat<M>(ray.tnear()) < t) & (t <= vfloat<M>(ray.tfar));
-          if (EMBREE_CURVE_SELF_INTERSECTION_AVOIDANCE_FACTOR != 0.0f) 
-            valid &= t > float(EMBREE_CURVE_SELF_INTERSECTION_AVOIDANCE_FACTOR)*r*depth_scale; // ignore self intersections
+          valid &= (d2 <= r2) & (vfloat<M>(ray.tnear) < t) & (t <= vfloat<M>(ray.tfar));
           if (unlikely(none(valid))) return false;
           
           /* ignore denormalized segments */
@@ -90,9 +99,23 @@ namespace embree
       };
     
     template<int M, int K>
-      struct FlatLinearCurveIntersectorK
+      struct LineIntersectorK
       {
-        typedef CurvePrecalculationsK<K> Precalculations;
+        struct Precalculations 
+        {
+          __forceinline Precalculations (const vbool<K>& valid, const RayK<K>& ray)
+          {
+            size_t mask = movemask(valid);
+            depth_scale = rsqrt(dot(ray.dir,ray.dir));
+            while (mask) {
+              size_t k = __bscf(mask);
+              ray_space[k] = frame(depth_scale[k]*Vec3fa(ray.dir.x[k],ray.dir.y[k],ray.dir.z[k])).transposed();
+            }
+          }
+          
+          vfloat<K> depth_scale;
+          LinearSpace3<Vec3vf<M>> ray_space[K];
+        };
         
         template<typename Epilog>
         static __forceinline bool intersect(const vbool<M>& valid_i,
@@ -102,12 +125,10 @@ namespace embree
         {
           /* transform end points into ray space */
           vbool<M> valid = valid_i;
-          vfloat<M> depth_scale = pre.depth_scale[k];
-          LinearSpace3<Vec3vf<M>> ray_space = pre.ray_space[k];
           const Vec3vf<M> ray_org(ray.org.x[k],ray.org.y[k],ray.org.z[k]);
           const Vec3vf<M> ray_dir(ray.dir.x[k],ray.dir.y[k],ray.dir.z[k]);
-          Vec4vf<M> p0(xfmVector(ray_space,v0.xyz()-ray_org), v0.w);
-          Vec4vf<M> p1(xfmVector(ray_space,v1.xyz()-ray_org), v1.w);
+          Vec4vf<M> p0(xfmVector(pre.ray_space[k],v0.xyz()-ray_org), v0.w);
+          Vec4vf<M> p1(xfmVector(pre.ray_space[k],v1.xyz()-ray_org), v1.w);
           
           /* approximative intersection with cone */
           const Vec4vf<M> v = p1-p0;
@@ -116,13 +137,11 @@ namespace embree
           const vfloat<M> d1 = madd(v.x,v.x,v.y*v.y);
           const vfloat<M> u = clamp(d0*rcp(d1),vfloat<M>(zero),vfloat<M>(one));
           const Vec4vf<M> p = madd(u,v,p0);
-          const vfloat<M> t = p.z;
+          const vfloat<M> t = p.z*pre.depth_scale[k];
           const vfloat<M> d2 = madd(p.x,p.x,p.y*p.y);
           const vfloat<M> r = p.w;
           const vfloat<M> r2 = r*r;
-          valid &= (d2 <= r2) & (vfloat<M>(ray.tnear()[k]) < t) & (t <= vfloat<M>(ray.tfar[k]));
-          if (EMBREE_CURVE_SELF_INTERSECTION_AVOIDANCE_FACTOR != 0.0f) 
-            valid &= t > float(EMBREE_CURVE_SELF_INTERSECTION_AVOIDANCE_FACTOR)*r*depth_scale; // ignore self intersections
+          valid &= (d2 <= r2) & (vfloat<M>(ray.tnear[k]) < t) & (t <= vfloat<M>(ray.tfar[k]));
           if (unlikely(none(valid))) return false;
           
           /* ignore denormalized segments */

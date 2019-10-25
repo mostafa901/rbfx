@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2017 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -18,7 +18,7 @@
 
 #include "default.h"
 
-/* Macros to gather statistics */
+/* Makros to gather statistics */
 #ifdef EMBREE_STAT_COUNTERS
 #  define STAT(x) x
 #  define STAT3(s,x,y,z) \
@@ -72,7 +72,6 @@ namespace embree
           void clear () {
             normal.clear();
             shadow.clear();
-            point_query.clear();
           }
 
 	  /* normal and shadow ray statistics */
@@ -102,7 +101,7 @@ namespace embree
 	    std::atomic<size_t> trav_stack_nodes; 
             std::atomic<size_t> trav_xfm_nodes; 
             
-	  } normal, shadow, point_query;
+	  } normal, shadow;
 	} all, active, code; 
 
         std::atomic<size_t> user[10];
