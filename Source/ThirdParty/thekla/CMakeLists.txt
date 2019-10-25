@@ -15,25 +15,27 @@ add_subdirectory(src/nvimage)
 add_subdirectory(src/nvmath)
 add_subdirectory(src/nvmesh)
 
-add_executable(
-    thekla_atlas_test
-    src/thekla/thekla_atlas_test.cpp
-    src/thekla/thekla_atlas.cpp)
+# Urho3D: Disable test
+# add_executable(
+#    thekla_atlas_test
+#    src/thekla/thekla_atlas_test.cpp
+#    src/thekla/thekla_atlas.cpp)
 
-target_link_libraries(
-    thekla_atlas_test
-    nvmesh)
+# target_link_libraries(
+#    thekla_atlas_test
+#    nvmesh)
 
 set(CMAKE_DEBUG_POSTFIX d)
 
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--export-all-symbols")
 
-add_library(libthekla_atlas
-	src/thekla/thekla_atlas.cpp
-)
+# Urho3D: Disable atlas library
+# add_library(libthekla_atlas
+#	src/thekla/thekla_atlas.cpp
+# )
 
-install(TARGETS libthekla_atlas DESTINATION lib/static)
+# install(TARGETS libthekla_atlas DESTINATION lib/static)
 
 get_property(HEADER_DIRS DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 

@@ -44,6 +44,27 @@ add_subdirectory(ETCPACK)
 if (NOT MINI_URHO)
     add_subdirectory(FreeType)
 
+    if (URHO3D_GLOW)
+        add_subdirectory(thekla)
+        if (NOT URHO3D_MERGE_STATIC_LIBS)
+            install(TARGETS nvmesh nvcore nvmath nvimage posh EXPORT Urho3D ARCHIVE DESTINATION ${DEST_ARCHIVE_DIR})
+        endif ()
+
+        set (EMBREE_ISPC_SUPPORT OFF CACHE BOOL "")
+        set (EMBREE_TUTORIALS OFF CACHE BOOL "")
+        set (EMBREE_STATIC_LIB OFF CACHE BOOL "")
+        set (EMBREE_TASKING_SYSTEM "INTERNAL" CACHE STRING "")
+        add_definitions(-DEMBREE_STATIC_LIB)
+        # TODO: Try to remove CMAKE_INCLUDE_CURRENT_DIR at all
+        set (CMAKE_INCLUDE_CURRENT_DIR OFF)
+        add_subdirectory(embree)
+        set (CMAKE_INCLUDE_CURRENT_DIR ON)
+
+        if (NOT URHO3D_MERGE_STATIC_LIBS)
+            install(TARGETS embree tasking EXPORT Urho3D ARCHIVE DESTINATION ${DEST_ARCHIVE_DIR})
+        endif ()
+    endif ()
+
     if (URHO3D_SYSTEMUI)
         add_subdirectory(imgui)
     endif ()

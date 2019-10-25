@@ -172,6 +172,7 @@ set (THIRD_PARTY_DEPENDENCIES
     EASTL
     entt
     ETCPACK
+    embree
 )
 
 if (URHO3D_MERGE_STATIC_LIBS)
@@ -185,6 +186,10 @@ elseif (TARGET Bullet)
     else ()
         target_link_libraries(Urho3D PUBLIC Bullet)
     endif ()
+endif ()
+
+if (URHO3D_GLOW)
+    target_link_libraries(Urho3D PUBLIC nvmesh)
 endif ()
 
 foreach (dep ${THIRD_PARTY_DEPENDENCIES})
