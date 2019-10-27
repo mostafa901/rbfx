@@ -172,6 +172,7 @@ set (THIRD_PARTY_DEPENDENCIES
     EASTL
     entt
     ETCPACK
+    libthekla_atlas
 )
 
 if (URHO3D_MERGE_STATIC_LIBS)
