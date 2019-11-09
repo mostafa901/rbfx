@@ -46,6 +46,17 @@ if (NOT MINI_URHO)
 
     if (URHO3D_GLOW)
         add_subdirectory(thekla)
+
+        set (EMBREE_ISPC_SUPPORT OFF CACHE BOOL "")
+        set (EMBREE_TUTORIALS OFF CACHE BOOL "")
+        set (EMBREE_STATIC_LIB ON CACHE BOOL "")
+        set (EMBREE_TASKING_SYSTEM "INTERNAL" CACHE STRING "")
+        set (EMBREE_LIBRARY_NAME "embree" CACHE STRING "")
+        set (EMBREE_STATIC_RUNTIME ${URHO3D_STATIC_RUNTIME} CACHE BOOL "")
+        # TODO: Try to remove CMAKE_INCLUDE_CURRENT_DIR at all
+        set (CMAKE_INCLUDE_CURRENT_DIR OFF)
+        add_subdirectory(embree)
+        set (CMAKE_INCLUDE_CURRENT_DIR ON)
     endif ()
 
     if (URHO3D_SYSTEMUI)

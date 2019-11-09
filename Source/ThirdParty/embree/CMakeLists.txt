@@ -504,3 +504,8 @@ SET_PROPERTY(TARGET uninstall PROPERTY FOLDER CMakePredefinedTargets)
 # Has to be last
 ##############################################################
 INCLUDE(CPack)
+
+# Urho3D: Install headers
+target_include_directories(embree PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
