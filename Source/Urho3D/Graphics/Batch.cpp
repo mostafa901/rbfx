@@ -262,6 +262,11 @@ void Batch::Prepare(View* view, Camera* camera, bool setModelTransform, bool all
         }
     }
 
+    if (lightmapTilingOffset_)
+    {
+        graphics->SetShaderParameter(VSP_LMOFFSET, *lightmapTilingOffset_);
+    }
+
     // Set zone-related shader parameters
     BlendMode blend = graphics->GetBlendMode();
     // If the pass is additive, override fog color to black so that shaders do not need a separate additive path
@@ -610,8 +615,17 @@ void Batch::Prepare(View* view, Camera* camera, bool setModelTransform, bool all
         for (auto i = textures.begin(); i !=
             textures.end(); ++i)
         {
+            if (i->first == TU_EMISSIVE && lightmapTilingOffset_)
+                continue;
+
             if (graphics->HasTextureUnit(i->first))
                 graphics->SetTexture(i->first, i->second.Get());
+        }
+
+        Scene* scene = view->GetScene();
+        if (lightmapTilingOffset_ && scene)
+        {
+            graphics->SetTexture(TU_EMISSIVE, scene->GetLightmapTexture(lightmapTextureID_));
         }
     }
 

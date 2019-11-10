@@ -20,8 +20,11 @@
 // THE SOFTWARE.
 //
 
+#include <Urho3D/Glow/Embree.h>
+
 #include <Urho3D/Core/CoreEvents.h>
 #include <Urho3D/Engine/Engine.h>
+#include <Urho3D/Glow/LightmapUVGenerator.h>
 #include <Urho3D/Graphics/Camera.h>
 #include <Urho3D/Graphics/Graphics.h>
 #include <Urho3D/Graphics/Material.h>
@@ -29,6 +32,7 @@
 #include <Urho3D/Graphics/Octree.h>
 #include <Urho3D/Graphics/Renderer.h>
 #include <Urho3D/Graphics/StaticModel.h>
+#include <Urho3D/Graphics/Zone.h>
 #include <Urho3D/Input/Input.h>
 #include <Urho3D/Resource/ResourceCache.h>
 #include <Urho3D/Scene/Scene.h>
@@ -36,9 +40,240 @@
 #include <Urho3D/UI/Text.h>
 #include <Urho3D/UI/UI.h>
 
+#include <Urho3D/Graphics/View.h>
+#include <Urho3D/Graphics/RenderPath.h>
+#include <Urho3D/Graphics/GraphicsDefs.h>
+
 #include "StaticScene.h"
 
 #include <Urho3D/DebugNew.h>
+
+bool GenerateModelLightmapUV(Model* model)
+{
+    NativeModelView nativeModelView(model->GetContext());
+    nativeModelView.ImportModel(model);
+
+    ModelView modelView(model->GetContext());
+    modelView.ImportModel(nativeModelView);
+
+    if (!GenerateLightmapUV(modelView, {}))
+    {
+        assert(0);
+        return false;
+    }
+
+    modelView.ExportModel(nativeModelView);
+
+    nativeModelView.ExportModel(model);
+    return true;
+}
+
+void ReadTextureRGBA32Float(Texture* texture, ea::vector<Vector4>& dest)
+{
+    auto texture2D = dynamic_cast<Texture2D*>(texture);
+    const unsigned numElements = texture->GetDataSize(texture->GetWidth(), texture->GetHeight()) / sizeof(Vector4);
+    dest.resize(numElements);
+    texture2D->GetData(0, dest.data());
+}
+
+SharedPtr<Image> ConvertToImage(Context* context,
+    unsigned width, unsigned height, const ea::vector<Vector4>& data, const Vector4& scale, const Vector4& pad)
+{
+    auto image = MakeShared<Image>(context);
+    image->SetSize(width, height, 4);
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            const Vector4& texel = data[y * width + x] * scale + pad;
+            if (texel.w_ > 0.5)
+                image->SetPixel(x, y, Color(texel.x_, texel.y_, texel.z_ , 1.0));
+            else
+                image->SetPixel(x, y, Color::BLACK);
+        }
+    }
+    return image;
+}
+
+SharedPtr<Image> ConvertToImage(Context* context, unsigned width, unsigned height, const ea::vector<Color>& data)
+{
+    auto image = MakeShared<Image>(context);
+    image->SetSize(width, height, 4);
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            Color color = data[y * width + x];
+            color.a_ = 1.0f;
+            image->SetPixel(x, y, color);
+        }
+    }
+    return image;
+}
+
+bool GenerateLightMap(Context* context, Model* model, const Vector3& lightDirection)
+{
+    RTCDevice embreeDevice = rtcNewDevice("");
+    RTCScene embreeScene = rtcNewScene(embreeDevice);
+
+    {
+        NativeModelView nativeModelView(model->GetContext());
+        nativeModelView.ImportModel(model);
+
+        ModelView modelView(model->GetContext());
+        modelView.ImportModel(nativeModelView);
+
+        const GeometryLODView& geometry = modelView.GetGeometries()[0].lods_[0];
+
+        RTCGeometry embreeGeometry = rtcNewGeometry(embreeDevice, RTC_GEOMETRY_TYPE_TRIANGLE);
+
+        float* vertices = reinterpret_cast<float*>(rtcSetNewGeometryBuffer(embreeGeometry, RTC_BUFFER_TYPE_VERTEX,
+            0, RTC_FORMAT_FLOAT3, sizeof(Vector3), geometry.vertices_.size()));
+
+        for (unsigned i = 0; i < geometry.vertices_.size(); ++i)
+        {
+            vertices[i * 3 + 0] = geometry.vertices_[i].position_.x_;
+            vertices[i * 3 + 1] = geometry.vertices_[i].position_.y_;
+            vertices[i * 3 + 2] = geometry.vertices_[i].position_.z_;
+        }
+
+        unsigned* indices = reinterpret_cast<unsigned*>(rtcSetNewGeometryBuffer(embreeGeometry, RTC_BUFFER_TYPE_INDEX,
+            0, RTC_FORMAT_UINT3, sizeof(unsigned) * 3, geometry.faces_.size()));
+
+        for (unsigned i = 0; i < geometry.faces_.size(); ++i)
+        {
+            indices[i * 3 + 0] = geometry.faces_[i].indices_[0];
+            indices[i * 3 + 1] = geometry.faces_[i].indices_[1];
+            indices[i * 3 + 2] = geometry.faces_[i].indices_[2];
+        }
+
+        rtcCommitGeometry(embreeGeometry);
+        rtcAttachGeometry(embreeScene, embreeGeometry);
+        rtcReleaseGeometry(embreeGeometry);
+    }
+
+    rtcCommitScene(embreeScene);
+
+    ResourceCache* cache = context->GetCache();
+    Graphics* graphics = context->GetGraphics();
+
+    unsigned width = 1024;
+    unsigned height = 1024;
+
+    // Get render path
+    auto renderPathXml = cache->GetResource<XMLFile>("RenderPaths/LightmapGBuffer.xml");
+    auto renderPath = MakeShared<RenderPath>();
+    renderPath->Load(renderPathXml);
+
+    // Get material
+    auto material = cache->GetResource<Material>("Materials/LightmapBaker.xml");
+    material->SetShaderParameter("LMOffset", Vector4(1, 1, 0, 0));
+
+    // Create scene
+    auto scene = MakeShared<Scene>(context);
+    scene->CreateComponent<Octree>();
+    scene->CreateComponent<Camera>();
+
+    Node* node = scene->CreateChild();
+    auto staticModel = node->CreateComponent<StaticModel>();
+    staticModel->SetModel(model);
+    staticModel->SetMaterial(material);
+
+    // Allocate destination buffers
+    SharedPtr<Texture2D> texture = MakeShared<Texture2D>(context);
+    texture->SetSize(width, height, Graphics::GetRGBAFormat(), TEXTURE_RENDERTARGET);
+    SharedPtr<RenderSurface> renderSurface(texture->GetRenderSurface());
+
+    // Prepare views
+    if (!graphics->BeginFrame())
+        return false;
+
+    // Get camera
+    Camera* camera = scene->GetComponent<Camera>();
+
+    // Setup viewport
+    Viewport viewport(context);
+    viewport.SetCamera(camera);
+    viewport.SetRect(IntRect::ZERO);
+    viewport.SetRenderPath(renderPath);
+    viewport.SetScene(scene);
+
+    // Render scene
+    View view(context);
+    view.Define(renderSurface, &viewport);
+    view.Update(FrameInfo());
+    view.Render();
+
+    graphics->EndFrame();
+
+    // Read buffers
+    ea::vector<Vector4> positionBuffer;
+    ea::vector<Vector4> smoothPositionBuffer;
+    ea::vector<Vector4> faceNormalBuffer;
+    ea::vector<Vector4> smoothNormalBuffer;
+
+    ReadTextureRGBA32Float(view.GetExtraRenderTarget("position"), positionBuffer);
+    ReadTextureRGBA32Float(view.GetExtraRenderTarget("smoothposition"), smoothPositionBuffer);
+    ReadTextureRGBA32Float(view.GetExtraRenderTarget("facenormal"), faceNormalBuffer);
+    ReadTextureRGBA32Float(view.GetExtraRenderTarget("smoothnormal"), smoothNormalBuffer);
+
+    ea::vector<Color> lightmapBuffer;
+    lightmapBuffer.resize(width * height);
+
+    const Vector3 rayDirection = -lightDirection.Normalized();
+    for (unsigned i = 0; i < lightmapBuffer.size(); ++i)
+    {
+        const unsigned geometryId = static_cast<unsigned>(positionBuffer[i].w_);
+        if (!geometryId)
+            continue;
+
+        const Vector3 position = static_cast<Vector3>(positionBuffer[i]);
+        const Vector3 smoothNormal = static_cast<Vector3>(smoothNormalBuffer[i]);
+        const float diffuseLighting = ea::max(0.0f, smoothNormal.DotProduct(rayDirection));
+        const Vector3 rayOrigin = position + rayDirection * 0.001f;
+
+        RTCRayHit rayHit;
+        rayHit.ray.org_x = rayOrigin.x_;
+        rayHit.ray.org_y = rayOrigin.y_;
+        rayHit.ray.org_z = rayOrigin.z_;
+        rayHit.ray.dir_x = rayDirection.x_;
+        rayHit.ray.dir_y = rayDirection.y_;
+        rayHit.ray.dir_z = rayDirection.z_;
+        rayHit.ray.tnear = 0.0f;
+        rayHit.ray.tfar = 100.0f;
+        rayHit.ray.time = 0.0f;
+        rayHit.ray.id = 0;
+        rayHit.ray.mask = 0xffffffff;
+        rayHit.ray.flags = 0xffffffff;
+        rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+
+        RTCIntersectContext rayContext;
+        rtcInitIntersectContext(&rayContext);
+        rtcIntersect1(embreeScene, &rayContext, &rayHit);
+
+        const float shadow = rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ? 1.0f : 0.0f;
+
+        lightmapBuffer[i] = Color::WHITE * diffuseLighting * shadow;
+    }
+
+    // Save images
+    const Vector4 testNormalScale{ 0.5f, 0.5f, 0.5f, 1.0f };
+    const Vector4 testNormalPad{ 0.5f, 0.5f, 0.5f, 0.0f };
+
+    auto smoothNormalImage = ConvertToImage(context, width, height, smoothNormalBuffer, testNormalScale, testNormalPad);
+    smoothNormalImage->SaveFile("D:/temp/lm_smoothnormal.png");
+
+    auto faceNormalImage = ConvertToImage(context, width, height, faceNormalBuffer, testNormalScale, testNormalPad);
+    faceNormalImage->SaveFile("D:/temp/lm_facenormal.png");
+
+    auto lightmapImage = ConvertToImage(context, width, height, lightmapBuffer);
+    lightmapImage->SetName("Textures/Lightmap.png");
+    lightmapImage->SaveFile(cache->GetResourceDir(1) + lightmapImage->GetName());
+
+    rtcReleaseScene(embreeScene);
+    rtcReleaseDevice(embreeDevice);
+    return true;
+}
 
 
 StaticScene::StaticScene(Context* context) :
@@ -69,9 +304,30 @@ void StaticScene::Start()
 
 void StaticScene::CreateScene()
 {
+    auto* renderer = GetSubsystem<Renderer>();
+    renderer->SetDynamicInstancing(false);
+
     auto* cache = GetSubsystem<ResourceCache>();
 
     scene_ = new Scene(context_);
+    scene_->AddLightmap("Textures/Lightmap.png");
+
+    //auto planeModel = cache->GetResource<Model>("Models/Plane.mdl");
+    auto mushroomModel = cache->GetResource<Model>("Models/Mushroom.mdl"); //Mushroom
+    //planeModel->SetNumGeometryLodLevels(0, 1);
+    mushroomModel->SetNumGeometryLodLevels(0, 1);
+    //GenerateModelLightmapUV(planeModel);
+    GenerateModelLightmapUV(mushroomModel);
+    //auto planeMaterial = cache->GetResource<Material>("Materials/DefaultGrey.xml");
+    auto mushroomMaterial = cache->GetResource<Material>("Materials/DefaultGrey.xml"); //Mushroom
+    mushroomMaterial->SetVertexShaderDefines(mushroomMaterial->GetVertexShaderDefines() + " LIGHTMAP");
+    mushroomMaterial->SetPixelShaderDefines(mushroomMaterial->GetPixelShaderDefines() + " LIGHTMAP");
+    //planeMaterial->SetVertexShaderDefines(planeMaterial->GetVertexShaderDefines() + " LIGHTMAP");
+    //planeMaterial->SetPixelShaderDefines(planeMaterial->GetPixelShaderDefines() + " LIGHTMAP");
+
+    //const Vector3 lightDirection{ 0.6f, -0.5f, 0.8f };
+    const Vector3 lightDirection{ 0.0f, -1.0f, 0.0f };
+    GenerateLightMap(context_, mushroomModel, lightDirection);
 
     // Create the Octree component to the scene. This is required before adding any drawable components, or else nothing will
     // show up. The default octree volume will be from (-1000, -1000, -1000) to (1000, 1000, 1000) in world coordinates; it
@@ -79,39 +335,22 @@ void StaticScene::CreateScene()
     // optimizing manner
     scene_->CreateComponent<Octree>();
 
-    // Create a child scene node (at world origin) and a StaticModel component into it. Set the StaticModel to show a simple
-    // plane mesh with a "stone" material. Note that naming the scene nodes is optional. Scale the scene node larger
-    // (100 x 100 world units)
-    Node* planeNode = scene_->CreateChild("Plane");
-    planeNode->SetScale(Vector3(100.0f, 1.0f, 100.0f));
-    auto* planeObject = planeNode->CreateComponent<StaticModel>();
-    planeObject->SetModel(cache->GetResource<Model>("Models/Plane.mdl"));
-    planeObject->SetMaterial(cache->GetResource<Material>("Materials/StoneTiled.xml"));
+    Node* zoneNode = scene_->CreateChild("Zone");
+    Zone* zone = zoneNode->CreateComponent<Zone>();
+    zone->SetBoundingBox(BoundingBox(-1000, 1000));
+    zone->SetAmbientColor(Color::WHITE * 0.5f);
 
-    // Create a directional light to the world so that we can see something. The light scene node's orientation controls the
-    // light direction; we will use the SetDirection() function which calculates the orientation from a forward direction vector.
-    // The light will use default settings (white light, no shadows)
-    Node* lightNode = scene_->CreateChild("DirectionalLight");
-    lightNode->SetDirection(Vector3(0.6f, -1.0f, 0.8f)); // The direction vector does not need to be normalized
-    auto* light = lightNode->CreateComponent<Light>();
-    light->SetLightType(LIGHT_DIRECTIONAL);
-
-    // Create more StaticModel objects to the scene, randomly positioned, rotated and scaled. For rotation, we construct a
-    // quaternion from Euler angles where the Y angle (rotation about the Y axis) is randomized. The mushroom model contains
-    // LOD levels, so the StaticModel component will automatically select the LOD level according to the view distance (you'll
-    // see the model get simpler as it moves further away). Finally, rendering a large number of the same object with the
-    // same material allows instancing to be used, if the GPU supports it. This reduces the amount of CPU work in rendering the
-    // scene.
-    const unsigned NUM_OBJECTS = 200;
-    for (unsigned i = 0; i < NUM_OBJECTS; ++i)
     {
         Node* mushroomNode = scene_->CreateChild("Mushroom");
-        mushroomNode->SetPosition(Vector3(Random(90.0f) - 45.0f, 0.0f, Random(90.0f) - 45.0f));
-        mushroomNode->SetRotation(Quaternion(0.0f, Random(360.0f), 0.0f));
-        mushroomNode->SetScale(0.5f + Random(2.0f));
+        //mushroomNode->SetScale(Vector3(2.0f, 2.0f, 2.0f));
+        //mushroomNode->SetPosition(Vector3(0.0f, 3.0f, 0.0f));
         auto* mushroomObject = mushroomNode->CreateComponent<StaticModel>();
-        mushroomObject->SetModel(cache->GetResource<Model>("Models/Mushroom.mdl"));
-        mushroomObject->SetMaterial(cache->GetResource<Material>("Materials/Mushroom.xml"));
+        mushroomObject->SetModel(mushroomModel);
+        mushroomObject->SetMaterial(mushroomMaterial);
+        mushroomObject->SetLightmap(true);
+        mushroomObject->SetCastShadows(true);
+        mushroomObject->SetLightmapIndex(0);
+        mushroomObject->SetLightmapTilingOffset(Vector4(1, 1, 0, 0));
     }
 
     // Create a scene node for the camera, which we will move around
@@ -120,7 +359,10 @@ void StaticScene::CreateScene()
     cameraNode_->CreateComponent<Camera>();
 
     // Set an initial position for the camera scene node above the plane
-    cameraNode_->SetPosition(Vector3(0.0f, 5.0f, 0.0f));
+    cameraNode_->SetPosition(Vector3(-5.0f, 5.0f, -5.0f));
+    cameraNode_->SetDirection(Vector3(5.0f, -5.0f, 5.0f));
+    yaw_ = cameraNode_->GetRotation().YawAngle();
+    pitch_ = cameraNode_->GetRotation().PitchAngle();
 }
 
 void StaticScene::CreateInstructions()

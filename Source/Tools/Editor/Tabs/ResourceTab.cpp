@@ -29,6 +29,10 @@
 #include <Urho3D/Graphics/Model.h>
 #include <Urho3D/IO/Log.h>
 #include <Urho3D/Graphics/Octree.h>
+// TODO(glow): Extract
+#include <Urho3D/Graphics/NativeModelView.h>
+#include <Urho3D/Graphics/ModelView.h>
+#include <Urho3D/Glow/LightmapUVGenerator.h>
 
 #include <IconFontCppHeaders/IconsFontAwesome5.h>
 #include <Toolbox/IO/ContentUtilities.h>
@@ -258,6 +262,35 @@ bool ResourceTab::RenderWindowContent()
 
         if (ui::MenuItem("Delete", "Del") && hasSelection)
             flags_ |= RBF_DELETE_CURRENT;
+
+        ui::Separator();
+
+        // TODO(glow): Extract
+        const bool modelSelected = resourceSelection_.ends_with(".mdl");
+        if (ui::MenuItem("Generate Lightmaps", nullptr, nullptr, modelSelected)  && hasSelection)
+        {
+            if (auto model = GetCache()->GetResource<Model>(resourcePath_ + resourceSelection_))
+            {
+                model->SaveFile("D:/Root/Repos/Urho/rbfx-glow/bin/CoreData/" + model->GetName());
+
+                NativeModelView nativeView(context_);
+                nativeView.ImportModel(model);
+
+                ModelView simpleView(context_);
+                simpleView.ImportModel(nativeView);
+
+                if (GenerateLightmapUV(simpleView, {}))
+                {
+                    simpleView.ExportModel(nativeView);
+
+                    model->SendEvent(E_RELOADSTARTED);
+                    nativeView.ExportModel(model);
+                    model->SendEvent(E_RELOADFINISHED);
+
+                    model->SaveFile("D:/Root/Repos/Urho/rbfx-glow/bin/CoreData/" + model->GetName());
+                }
+            }
+        }
 
         if (!hasSelection)
             ui::PopStyleColor();
