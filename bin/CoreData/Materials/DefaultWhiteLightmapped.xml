@@ -1,0 +1,6 @@
+<material>
+    <technique name="Techniques/NoTexture.xml" />
+    <shader vsdefines="LIGHTMAP" psdefines="LIGHTMAP" />
+    <parameter name="MatDiffColor" value="1 1 1 1" />
+    <parameter name="MatSpecColor" value="0 0 0 16" />
+</material>

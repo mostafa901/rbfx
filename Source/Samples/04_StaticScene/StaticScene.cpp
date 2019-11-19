@@ -22,6 +22,8 @@
 
 #include <Urho3D/Core/CoreEvents.h>
 #include <Urho3D/Engine/Engine.h>
+#include <Urho3D/Glow/LightmapUVGenerator.h>
+#include <Urho3D/Glow/LightmapBaker.h>
 #include <Urho3D/Graphics/Camera.h>
 #include <Urho3D/Graphics/Graphics.h>
 #include <Urho3D/Graphics/Material.h>
@@ -29,6 +31,7 @@
 #include <Urho3D/Graphics/Octree.h>
 #include <Urho3D/Graphics/Renderer.h>
 #include <Urho3D/Graphics/StaticModel.h>
+#include <Urho3D/Graphics/Zone.h>
 #include <Urho3D/Input/Input.h>
 #include <Urho3D/Resource/ResourceCache.h>
 #include <Urho3D/Scene/Scene.h>
@@ -36,10 +39,52 @@
 #include <Urho3D/UI/Text.h>
 #include <Urho3D/UI/UI.h>
 
+#include <Urho3D/Graphics/View.h>
+#include <Urho3D/Graphics/RenderPath.h>
+#include <Urho3D/Graphics/GraphicsDefs.h>
+
 #include "StaticScene.h"
 
 #include <Urho3D/DebugNew.h>
 
+bool GenerateModelLightmapUV(Model* model)
+{
+    NativeModelView nativeModelView(model->GetContext());
+    nativeModelView.ImportModel(model);
+
+    ModelView modelView(model->GetContext());
+    modelView.ImportModel(nativeModelView);
+
+    if (!GenerateLightmapUV(modelView, {}))
+    {
+        assert(0);
+        return false;
+    }
+
+    modelView.ExportModel(nativeModelView);
+
+    nativeModelView.ExportModel(model);
+    return true;
+}
+
+SharedPtr<Image> ConvertToImage(Context* context, unsigned width, unsigned height, const ea::vector<Color>& data)
+{
+    auto image = MakeShared<Image>(context);
+    image->SetSize(width, height, 4);
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            Color color = data[y * width + x];
+            color.r_ = Pow(color.r_, 1 / 2.2f);
+            color.g_ = Pow(color.g_, 1 / 2.2f);
+            color.b_ = Pow(color.b_, 1 / 2.2f);
+            color.a_ = 1.0f;
+            image->SetPixel(x, y, color);
+        }
+    }
+    return image;
+}
 
 StaticScene::StaticScene(Context* context) :
     Sample(context)
@@ -69,50 +114,58 @@ void StaticScene::Start()
 
 void StaticScene::CreateScene()
 {
+    auto* renderer = GetSubsystem<Renderer>();
+    renderer->SetDynamicInstancing(false);
+
     auto* cache = GetSubsystem<ResourceCache>();
 
     scene_ = new Scene(context_);
+    scene_->LoadFile("Scenes/LightmapperScene1.xml");
 
-    // Create the Octree component to the scene. This is required before adding any drawable components, or else nothing will
-    // show up. The default octree volume will be from (-1000, -1000, -1000) to (1000, 1000, 1000) in world coordinates; it
-    // is also legal to place objects outside the volume but their visibility can then not be checked in a hierarchically
-    // optimizing manner
-    scene_->CreateComponent<Octree>();
-
-    // Create a child scene node (at world origin) and a StaticModel component into it. Set the StaticModel to show a simple
-    // plane mesh with a "stone" material. Note that naming the scene nodes is optional. Scale the scene node larger
-    // (100 x 100 world units)
-    Node* planeNode = scene_->CreateChild("Plane");
-    planeNode->SetScale(Vector3(100.0f, 1.0f, 100.0f));
-    auto* planeObject = planeNode->CreateComponent<StaticModel>();
-    planeObject->SetModel(cache->GetResource<Model>("Models/Plane.mdl"));
-    planeObject->SetMaterial(cache->GetResource<Material>("Materials/StoneTiled.xml"));
-
-    // Create a directional light to the world so that we can see something. The light scene node's orientation controls the
-    // light direction; we will use the SetDirection() function which calculates the orientation from a forward direction vector.
-    // The light will use default settings (white light, no shadows)
-    Node* lightNode = scene_->CreateChild("DirectionalLight");
-    lightNode->SetDirection(Vector3(0.6f, -1.0f, 0.8f)); // The direction vector does not need to be normalized
-    auto* light = lightNode->CreateComponent<Light>();
-    light->SetLightType(LIGHT_DIRECTIONAL);
-
-    // Create more StaticModel objects to the scene, randomly positioned, rotated and scaled. For rotation, we construct a
-    // quaternion from Euler angles where the Y angle (rotation about the Y axis) is randomized. The mushroom model contains
-    // LOD levels, so the StaticModel component will automatically select the LOD level according to the view distance (you'll
-    // see the model get simpler as it moves further away). Finally, rendering a large number of the same object with the
-    // same material allows instancing to be used, if the GPU supports it. This reduces the amount of CPU work in rendering the
-    // scene.
-    const unsigned NUM_OBJECTS = 200;
-    for (unsigned i = 0; i < NUM_OBJECTS; ++i)
+    Node* staticNodesContainer = scene_->GetChild("StaticObjects");
+    ea::vector<Node*> staticNodes;
+    ea::vector<Node*> staticLights;
+    for (Node* child : staticNodesContainer->GetChildren())
     {
-        Node* mushroomNode = scene_->CreateChild("Mushroom");
-        mushroomNode->SetPosition(Vector3(Random(90.0f) - 45.0f, 0.0f, Random(90.0f) - 45.0f));
-        mushroomNode->SetRotation(Quaternion(0.0f, Random(360.0f), 0.0f));
-        mushroomNode->SetScale(0.5f + Random(2.0f));
-        auto* mushroomObject = mushroomNode->CreateComponent<StaticModel>();
-        mushroomObject->SetModel(cache->GetResource<Model>("Models/Mushroom.mdl"));
-        mushroomObject->SetMaterial(cache->GetResource<Material>("Materials/Mushroom.xml"));
+        if (child->HasComponent<Light>())
+        {
+            //child->SetDirection(Vector3::DOWN);
+            staticLights.push_back(child);
+            child->SetEnabled(false);
+        }
+        else if (child->HasComponent<StaticModel>())
+        {
+            staticNodes.push_back(child);
+        }
     }
+
+    LightmapBakingSettings lightmapSettings;
+    lightmapSettings.texelDensity_ = 32;
+    LightmapBaker baker(context_);
+    baker.Initialize(lightmapSettings, scene_, staticNodes, staticNodes, staticLights);
+    baker.CookRaytracingScene();
+    baker.BuildPhotonMap();
+
+    LightmapBakedData LightmapBakedData;
+    ea::vector<ea::string> lightmapNames;
+    for (unsigned i = 0; i < baker.GetNumLightmaps(); ++i)
+    {
+        baker.RenderLightmapGBuffer(i);
+        baker.BakeLightmap(LightmapBakedData);
+
+        const ea::string lightmapName = "Textures/Lightmap-" + ea::to_string(i) + ".png";
+        lightmapNames.push_back(lightmapName);
+
+        auto image = ConvertToImage(context_, LightmapBakedData.lightmapSize_.x_, LightmapBakedData.lightmapSize_.y_,
+            LightmapBakedData.backedLighting_);
+        image->SetName(lightmapName);
+        image->SaveFile(cache->GetResourceDir(1) + image->GetName());
+    }
+
+    const unsigned baseLightmapIndex = scene_->GetNumLightmaps();
+    for (const ea::string& lightmapName : lightmapNames)
+        scene_->AddLightmap(lightmapName);
+    baker.ApplyLightmapsToScene(baseLightmapIndex);
 
     // Create a scene node for the camera, which we will move around
     // The camera will use default settings (1000 far clip distance, 45 degrees FOV, set aspect ratio automatically)
@@ -120,7 +173,10 @@ void StaticScene::CreateScene()
     cameraNode_->CreateComponent<Camera>();
 
     // Set an initial position for the camera scene node above the plane
-    cameraNode_->SetPosition(Vector3(0.0f, 5.0f, 0.0f));
+    cameraNode_->SetPosition(Vector3(0.0f, 2.0f, -3.0f));
+    cameraNode_->SetDirection(Vector3(0.0f, 0.0f, 5.0f));
+    yaw_ = cameraNode_->GetRotation().YawAngle();
+    pitch_ = cameraNode_->GetRotation().PitchAngle();
 }
 
 void StaticScene::CreateInstructions()
@@ -159,7 +215,7 @@ void StaticScene::MoveCamera(float timeStep)
     auto* input = GetSubsystem<Input>();
 
     // Movement speed as world units per second
-    const float MOVE_SPEED = 20.0f;
+    const float MOVE_SPEED = 7.0f;
     // Mouse sensitivity as degrees per pixel
     const float MOUSE_SENSITIVITY = 0.1f;
 
