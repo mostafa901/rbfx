@@ -40,7 +40,7 @@ namespace DemoApplication
 
         protected override void Dispose(bool disposing)
         {
-            Renderer.SetViewport(0, null);    // Enable disposal of viewport by making it unreferenced by engine.
+            Context.Renderer.SetViewport(0, null);    // Enable disposal of viewport by making it unreferenced by engine.
             _viewport.Dispose();
             _scene.Dispose();
             _camera.Dispose();
@@ -61,7 +61,7 @@ namespace DemoApplication
 
         public override void Start()
         {
-            Input.SetMouseVisible(true);
+            Context.Input.SetMouseVisible(true);
 
             // Viewport
             _scene = new Scene(Context);
@@ -72,11 +72,11 @@ namespace DemoApplication
             _viewport.Scene = _scene;
             _viewport.Camera = _camera.CreateComponent<Camera>();
             _viewport.Camera.FarClip = 100f;
-            Renderer.SetViewport(0, _viewport);
+            Context.Renderer.SetViewport(0, _viewport);
 
             // Background
             //Renderer.DefaultZone.FogColor = new Color(0.5f, 0.5f, 0.7f);
-            Renderer.DefaultZone.FogColor = new Color(0.5f, 0.5f, 0.7f, .2f);
+            Context.Renderer.DefaultZone.FogColor = new Color(0.5f, 0.5f, 0.7f, .2f);
 
             // Scene
             _camera.Position = new Vector3(-10, -2, 0);
@@ -95,18 +95,18 @@ namespace DemoApplication
 
             var cusnode = CreateCustomGeometry();
 
-            float[] cameraFarClip = new float[1] { _viewport.Camera.FarClip };
-            float[] cubeDepth = new float[1];
+            float cameraFarClip = _viewport.Camera.FarClip ;
+            float cubeDepth=0 ;
             string path = Path.GetTempPath() + "\\test_CustomNode.xml";
             _scene.SubscribeToEvent(E.Update, a =>
             {
-                if (ImGui.SliderFloat("Camera FarClip", cameraFarClip, 0, 2000))
+                if (ImGui.SliderFloat("Camera FarClip",ref cameraFarClip, 0, 2000))
                 {
-                    _viewport.Camera.FarClip = cameraFarClip[0];
+                    _viewport.Camera.FarClip = cameraFarClip;
                 }
-                if (ImGui.SliderFloat("Cube depth", cubeDepth, 0, 100))
+                if (ImGui.SliderFloat("Cube depth", ref cubeDepth, 0, 100))
                 {
-                    cusnode.Position = new Vector3(cusnode.Position.X, cusnode.Position.Y, cubeDepth[0]);
+                    cusnode.Position = new Vector3(cusnode.Position.X, cusnode.Position.Y, cubeDepth);
                     _camera.LookAt(cusnode.Position);
                 }
 
@@ -134,7 +134,7 @@ namespace DemoApplication
 
         private Node CreateCustomGeometry()
         {
-            var vColTech = Cache.GetResource<Technique>("Techniques/NoTexture.xml");
+            var vColTech = Context.Cache.GetResource<Technique>("Techniques/NoTexture.xml");
             var mat = new Material(Context);
             mat.SetTechnique(0, vColTech);
             mat.SetShaderParameter("MatDiffColor", Color.Red);

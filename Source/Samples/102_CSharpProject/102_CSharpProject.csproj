@@ -7,7 +7,15 @@
     <ProjectGuid>{C457A2FE-AFD1-303A-9FA6-5E36EEE0E160}</ProjectGuid>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="**/*.cs" />
+    <Compile Include="..\..\..\..\..\..\Projects\EngineViewer\3D\Utility\CustomNodeComponent.cs">
+      <Link>CustomNodeComponent.cs</Link>
+    </Compile>
+    <Compile Include="155_CreatModel.cs" />
+    <Compile Include="155_CreatModel_CustomGeom.cs" />
+    <Compile Include="1xx_CameraFarClip.cs" />
+    <Compile Include="1xx_Material.cs" />
+    <Compile Include="MainWindow.xaml.cs" />
+    <Compile Include="Program.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../Urho3D/CSharp/Urho3DNet.csproj" />
@@ -17,6 +25,14 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="WindowsFormsIntegration" />
   </ItemGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'RelWithDebInfo|x64'">
   </PropertyGroup>

@@ -1,4 +1,4 @@
-﻿//
+//
 // Copyright (c) 2017-2019 the rbfx project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -34,7 +34,7 @@ namespace DemoApplication
         private Node _camera;
         private Node _cube;
         private Node _light;
-
+        public static IntPtr Parent;
         public DemoApplication(Context context) : base(context)
         {
         }
@@ -54,8 +54,10 @@ namespace DemoApplication
         {
             var currentDir = Directory.GetCurrentDirectory();
             engineParameters_[Urho3D.EpFullScreen] = false;
-            engineParameters_[Urho3D.EpWindowWidth] = 1920;
-            engineParameters_[Urho3D.EpWindowHeight] = 1080;
+            engineParameters_[Urho3D.EpExternalWindow] = Parent;
+            engineParameters_[Urho3D.EpWindowWidth] = 1200;
+            engineParameters_[Urho3D.EpWindowHeight] = 800;
+            engineParameters_[Urho3D.EpWindowResizable] = true;
             engineParameters_[Urho3D.EpWindowTitle] = "Hello C#";
             engineParameters_[Urho3D.EpResourcePrefixPaths] = $"{currentDir};{currentDir}/..";
         }

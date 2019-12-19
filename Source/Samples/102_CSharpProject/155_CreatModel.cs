@@ -44,7 +44,7 @@ namespace DemoApplication
 
         protected override void Dispose(bool disposing)
         {
-            Renderer.SetViewport(0, null);    // Enable disposal of viewport by making it unreferenced by engine.
+            Context.Renderer.SetViewport(0, null);    // Enable disposal of viewport by making it unreferenced by engine.
             _viewport.Dispose();
             _scene.Dispose();
             _camera.Dispose();
@@ -65,22 +65,22 @@ namespace DemoApplication
 
         public override void Start()
         {
-            Input.SetMouseVisible(true);
+            Context.Input.SetMouseVisible(true);
 
             // Viewport
             _scene = new Scene(Context);
             _scene.CreateComponent<Octree>();
 
-            _camera = _scene.CreateChild("Camera");            
+            _camera = _scene.CreateChild("Camera");
             _viewport = new Viewport(Context);
             _viewport.Scene = _scene;
             _viewport.Camera = _camera.CreateComponent<Camera>();
-            _viewport.Camera.FarClip = float.MaxValue-1;
-            Renderer.SetViewport(0, _viewport);
+            _viewport.Camera.FarClip = float.MaxValue - 1;
+            Context.Renderer.SetViewport(0, _viewport);
 
             // Background
             //Renderer.DefaultZone.FogColor = new Color(0.5f, 0.5f, 0.7f);
-            Renderer.DefaultZone.FogColor = new Color(0.5f, 0.5f, 0.7f, .2f);
+            Context.Renderer.DefaultZone.FogColor = new Color(0.5f, 0.5f, 0.7f, .2f);
 
             // Scene
             _camera.Position = new Vector3(0, 2, -2);
@@ -118,10 +118,10 @@ namespace DemoApplication
                     file.Dispose();
                 }
 
-                if (Input.GetMouseButtonClick( MouseButton.MousebLeft))
-            {
-                    var ray = _viewport.Camera.GetScreenRay(Input.MousePosition.X, Input.MousePosition.Y);
-            }
+                if (Context.Input.GetMouseButtonClick(MouseButton.MousebLeft))
+                {
+                    var ray = _viewport.Camera.GetScreenRay(Context.Input.MousePosition.X, Context.Input.MousePosition.Y);
+                }
             });
         }
 
@@ -132,29 +132,29 @@ namespace DemoApplication
             float[] vertexData =
             {
 					// Position             Normal				Texture     Tangent
-					0.0f, 0.5f, 0.0f,       0.5f, 0.5f, 0.5f,  
-                    -0.5f, -0.5f, 0.5f,     0.5f, 0.5f, 0.5f,  
-                    0.5f, -0.5f, 0.5f,      0.5f, 0.0f, 0.5f,   
+					0.0f, 0.5f, 0.0f,       0.5f, 0.5f, 0.5f,
+                    -0.5f, -0.5f, 0.5f,     0.5f, 0.5f, 0.5f,
+                    0.5f, -0.5f, 0.5f,      0.5f, 0.0f, 0.5f,
 
-                    0.0f, 0.5f, 0.0f,      -0.5f, 0.5f, 0.0f,   
-                    -0.5f, -0.5f, -0.5f,   -0.5f, 0.5f, 0.0f,   
-                    -0.5f, -0.5f, 0.5f,    -0.5f, 0.5f, 0.0f,   
+                    0.0f, 0.5f, 0.0f,      -0.5f, 0.5f, 0.0f,
+                    -0.5f, -0.5f, -0.5f,   -0.5f, 0.5f, 0.0f,
+                    -0.5f, -0.5f, 0.5f,    -0.5f, 0.5f, 0.0f,
 
-                    0.0f, 0.5f, 0.0f,      -0.5f, -0.5f, 0.5f,  
-                    0.5f, -0.5f, -0.5f,    -0.5f, -0.5f, 0.5f,   
-                    -0.5f, -0.5f, -0.5f,   -0.5f, -0.5f, 0.5f,   
+                    0.0f, 0.5f, 0.0f,      -0.5f, -0.5f, 0.5f,
+                    0.5f, -0.5f, -0.5f,    -0.5f, -0.5f, 0.5f,
+                    -0.5f, -0.5f, -0.5f,   -0.5f, -0.5f, 0.5f,
 
-                    0.0f, 0.5f, 0.0f,      -0.5f, -0.5f, 0.5f,   
-                    0.5f, -0.5f, 0.5f,     -0.5f, -0.5f, 0.5f,   
-                    0.5f, -0.5f, -0.5f,    -0.5f, -0.5f, 0.5f,  
+                    0.0f, 0.5f, 0.0f,      -0.5f, -0.5f, 0.5f,
+                    0.5f, -0.5f, 0.5f,     -0.5f, -0.5f, 0.5f,
+                    0.5f, -0.5f, -0.5f,    -0.5f, -0.5f, 0.5f,
 
-                    0.5f, -0.5f, -0.5f,     0.0f, 0.0f, 0.0f,   
-                    0.5f, -0.5f, 0.5f,      0.0f, 0.0f, 0.0f,   
-                    -0.5f, -0.5f, 0.5f,     0.0f, 0.0f, 0.0f,   
+                    0.5f, -0.5f, -0.5f,     0.0f, 0.0f, 0.0f,
+                    0.5f, -0.5f, 0.5f,      0.0f, 0.0f, 0.0f,
+                    -0.5f, -0.5f, 0.5f,     0.0f, 0.0f, 0.0f,
 
-                    0.5f, -0.5f, -0.5f,     0.0f, 0.0f, 0.0f,   
-                    -0.5f, -0.5f, 0.5f,     0.0f, 0.0f, 0.0f,   
-                    -0.5f, -0.5f, -0.5f,    0.0f, 0.0f, 0.0f,   
+                    0.5f, -0.5f, -0.5f,     0.0f, 0.0f, 0.0f,
+                    -0.5f, -0.5f, 0.5f,     0.0f, 0.0f, 0.0f,
+                    -0.5f, -0.5f, -0.5f,    0.0f, 0.0f, 0.0f,
                 };
 
             short[] indexData =
@@ -174,12 +174,18 @@ namespace DemoApplication
 
             // Shadowed buffer needed for raycasts to work, and so that data can be automatically restored on device loss
             vb.SetShadowed(true);
-            vb.SetSize(numVertices, VertexMask.MaskPosition | VertexMask.MaskNormal , false);
-            vb.SetData(vertexData);
+            vb.SetSize(numVertices, VertexMask.MaskPosition | VertexMask.MaskNormal, false);
+            fixed (float* vertexDataIntPtr = vertexData)
+            {
+                vb.SetData((IntPtr)vertexDataIntPtr);
+            }
 
             ib.SetShadowed(true);
             ib.SetSize(numVertices, false, false);
-            ib.SetData(indexData);
+            fixed (short* indexDataIntPtr = indexData)
+            {
+                ib.SetData((IntPtr)indexDataIntPtr);
+            }
 
             // Urho3D.GenerateTangents(vertexData, vb.GetVertexSize(), indexData, 0, indexData.Length);
 
@@ -193,9 +199,9 @@ namespace DemoApplication
             var v1 = new Vector3(-0.5f, -0.5f, -0.5f);
             var v2 = new Vector3(0.5f, 0.5f, 0.5f);
             Vector3[] vcs = new Vector3[2] { v1, v2 };
-            
+
             fromScratchModel.BoundingBox = new BoundingBox(vcs);
-             
+
 
             Node node = _scene.CreateChild("FromScratchObject");
             node.Position = (new Vector3(0.0f, 0.0f, 0.0f));
@@ -205,12 +211,12 @@ namespace DemoApplication
 
             // var mat = new Material(Context);
             // Material Texture notWorking
-          //  var mat = _scene.Cache.GetResource<Material>("Materials/Stone.xml");
+            //  var mat = _scene.Cache.GetResource<Material>("Materials/Stone.xml");
             var mat = new Material(Context);
             mat.SetShaderParameter("MatDiffColor", Color.Green);
             staticModel.SetMaterial(mat);
 
-            var st = Cache.GetResource<Model>("Models/Box.mdl");
+            var st = Context.Cache.GetResource<Model>("Models/Box.mdl");
             var vers = st.VertexBuffers[0].GetUnpackedData();
             List<string> vecs = new List<string>();
             for (int i = 0; i < vers.Count; i++)
