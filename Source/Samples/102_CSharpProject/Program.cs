@@ -114,15 +114,21 @@ namespace DemoApplication
 
     internal class Program
     {
+    [STAThread]
         public static void Main(string[] args)
         {
+            var win = new MainWindow();
+            win.ShowDialog();
+
+#if false
             using (var context = new Context())
             {
                 using (var application = new DemoApplication(context))
                 {
                     application.Run();
                 }
-            }
+            } 
+#endif
         }
     }
 }
